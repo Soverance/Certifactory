@@ -49,14 +49,4 @@ public class Common
         Debug.WriteLine("[DEBUG] BYTE ARRAY = " + b);
         return b;
     }
-
-    // Generates a random alphanumeric string
-    // we use this for creating temporary folders for file uploads
-    public static string RandomString(int length)
-    {
-        Random random = new Random();
-        const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-        return new string(Enumerable.Repeat(chars, length)
-            .Select(s => s[random.Next(s.Length)]).ToArray());
-    }
 }

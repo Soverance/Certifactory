@@ -19,13 +19,15 @@ public class Cryptography
     {
         // worth looking here, but seems to require on-prem AD CA:  https://docs.microsoft.com/en-us/mem/intune/protect/certificates-s-mime-encryption-sign
         // check this doc for s/mime cert config details:  https://docs.microsoft.com/en-us/archive/blogs/pki/outlook-smime-certificate-selection
-        // NOTE:  Hermeus is using KeyTalk to supply S/MIME certificates and configuration, so this function is no longer necessary but kept for posterity
+        // NOTE: S/MIME configuration is complicated, and worse, you'd really want to use a public CA (such as DigiCert) to ensure maximum compatibility with all recipients
+        // NOTE: so even though this method is functional, it really works best if you only send S/MIME email within your organization (where recipients would have the private CA certificate installed on their devices as a trusted root CA)
+        // That being said, I recommend using KeyTalk to supply S/MIME certificates and configuration, since it will be significantly easier as your organization grows
 
         SubjectAlternativeNameBuilder sanBuilder = new();
         sanBuilder.AddEmailAddress(emailAddress);
         sanBuilder.AddUserPrincipalName(emailAddress);
 
-        X500DistinguishedName distinguishedName = new($"CN={certificateName},C=US,ST=Georgia,L=Atlanta,O=Hermeus Corporation,OU=DevOps");
+        X500DistinguishedName distinguishedName = new($"CN={certificateName},C=US,ST=Georgia,L=Atlanta,O=Soverance Studios,OU=Information");
 
         using RSA rsa = RSA.Create(2048);
         var request = new CertificateRequest(distinguishedName, rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
@@ -55,7 +57,6 @@ public class Cryptography
         X509Certificate2 rootCA = new(File.ReadAllBytes(rootCertPath));
 
         var certificate = request.Create(rootCA, new DateTimeOffset(DateTime.UtcNow.AddDays(-1)), new DateTimeOffset(DateTime.UtcNow.AddDays(3650)), Common.GetRandomByteArray(10));
-        //var certificate = request.CreateSelfSigned(new DateTimeOffset(DateTime.UtcNow.AddDays(-1)), new DateTimeOffset(DateTime.UtcNow.AddDays(3650)));
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
