@@ -178,12 +178,15 @@ public class Cryptography
         byte[] privateKey = Encoding.ASCII.GetBytes(privateKeyString);
 
         string certificateName = System.IO.Path.GetFileNameWithoutExtension(certificatePfx);
+        string publicCertName = certificateName + ".cer";
         string publicKeyName = certificateName + ".crt.pem";
         string privateKeyName = certificateName + ".key.pem";
 
+        string publicCertExportPath = Path.Combine(exportPath, publicCertName);
         string publicExportPath = Path.Combine(exportPath, publicKeyName);
         string privateExportPath = Path.Combine(exportPath, privateKeyName);
 
+        System.IO.File.WriteAllBytes(publicCertExportPath, publicKey);
         System.IO.File.WriteAllBytes(publicExportPath, publicKey);
         System.IO.File.WriteAllBytes(privateExportPath, privateKey);
     }
