@@ -20,14 +20,29 @@ You can then use this utility to export the PFX bundle into decrypted PEM encode
 
 ## Generate Server Certificate
 >Usage:\
->`certifactory server <certificateName> <certificatePassword> <serverIP> <exportDirectory> <rootCA>`
+>`certifactory server <certificateName> <certificatePassword> <serverIP> <rootCA> <rootCAPassword> <exportDirectory>`
 >
 >Required Parameters:	
 >	- `certificateName`			The certificate name for the root certificate authority, i.e. "encryption.soverance.com".
 >	- `certificatePassword`		The password used to secure the resulting PFX certificate bundle.
 >	- `serverIP`				The IP address of the server where this certificate will be installed.
->	- `exportDirectory`			The absolute file path to a directory where you intend the resulting PFX file to be exported.
 >	- `rootCA`					The absolute path of the root certificate authority that will sign this certificate.
+>	- `rootCAPassword`			The password used to secure the Root CA PFX file.
+>	- `exportDirectory`			The absolute file path to a directory where you intend the resulting PFX file to be exported.
+
+
+## Generate S/MIME Certificate
+>Usage:\
+>`certifactory smime <certificateName> <certificatePassword> <userEmail> <exportDirectory> <rootCA>`
+>
+>Required Parameters:	
+>	- `certificateName`			The certificate name for the root certificate authority, i.e. "encryption.soverance.com".
+>	- `certificatePassword`		The password used to secure the resulting PFX certificate bundle.
+>	- `userEmail`				The email address of the of the user account for which you wish to generate the certificate.
+>	- `rootCA`					The absolute path of the root certificate authority that will sign this certificate.
+>	- `rootCAPassword`			The password used to secure the Root CA PFX file.
+>	- `exportDirectory`			The absolute file path to a directory where you intend the resulting PFX file to be exported.
+	
 
 ## Export PEM Encoded Files
 >Usage:\

@@ -62,6 +62,21 @@ class Program
                         System.IO.File.WriteAllBytes(exportPath, certData);
                         Console.WriteLine("Certificate exported to " + exportPath);
                         break;
+                    case "smime":
+                        // args[1] = cert name
+                        // args[2] = cert password
+                        // args[3] = email address                       
+                        // args[4] = root CA PFX path
+                        // args[5] = root CA PFX password
+                        // args[6] = export directory
+                        X509Certificate2 email_cert = Cryptography.buildSelfSignedSmimeCertificate(args[1], args[2], args[3], args[4], args[5]);
+                        Console.WriteLine("Certificate Thumbprint = " + email_cert.Thumbprint);
+                        byte[] email_certData = email_cert.Export(X509ContentType.Pfx, args[2]);
+                        string email_fullName = args[1] + ".pfx";
+                        string email_exportPath = Path.Combine(args[6], email_fullName);
+                        System.IO.File.WriteAllBytes(email_exportPath, email_certData);
+                        Console.WriteLine("Certificate exported to " + email_exportPath);
+                        break;
                     case "export":
                         // args[1] = cert pfx path
                         // args[2] = cert password

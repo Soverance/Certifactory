@@ -15,7 +15,7 @@ using System.Text;
 
 public class Cryptography
 {
-    public static X509Certificate2 buildSelfSignedSmimeCertificate(string certificateName, string certificatePassword, string emailAddress, string rootCAPfx)
+    public static X509Certificate2 buildSelfSignedSmimeCertificate(string certificateName, string certificatePassword, string emailAddress, string rootCAPfx, string rootCAPassword)
     {
         // worth looking here, but seems to require on-prem AD CA:  https://docs.microsoft.com/en-us/mem/intune/protect/certificates-s-mime-encryption-sign
         // check this doc for s/mime cert config details:  https://docs.microsoft.com/en-us/archive/blogs/pki/outlook-smime-certificate-selection
@@ -52,9 +52,7 @@ public class Cryptography
 
         request.CertificateExtensions.Add(sanBuilder.Build());
 
-        string basePath = Common.GetBasePath();
-        string rootCertPath = basePath + rootCAPfx; 
-        X509Certificate2 rootCA = new(File.ReadAllBytes(rootCertPath));
+        X509Certificate2 rootCA = new X509Certificate2(rootCAPfx, rootCAPassword, X509KeyStorageFlags.MachineKeySet);
 
         var certificate = request.Create(rootCA, new DateTimeOffset(DateTime.UtcNow.AddDays(-1)), new DateTimeOffset(DateTime.UtcNow.AddDays(3650)), Common.GetRandomByteArray(10));
 
