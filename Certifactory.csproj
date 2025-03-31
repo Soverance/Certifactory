@@ -8,6 +8,8 @@
     <AssemblyName>certifactory</AssemblyName>
     <AssemblyVersion>1.0.0</AssemblyVersion>
     <RootNamespace>Soverance.Certifactory</RootNamespace>
+    <Platforms>AnyCPU;x64</Platforms>
+    <PublishSingleFile>true</PublishSingleFile>
   </PropertyGroup>
 
 </Project>

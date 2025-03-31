@@ -9,6 +9,8 @@ bld/
 [Bb]in/
 [Oo]bj/
 [Ll]og/
+[Pp]roperties/
 
 # Visual Studio cache/options directory
 .vs/
+*.user
