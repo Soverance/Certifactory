@@ -10,6 +10,7 @@
     <RootNamespace>Soverance.Certifactory</RootNamespace>
     <Platforms>AnyCPU;x64</Platforms>
     <PublishSingleFile>true</PublishSingleFile>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
   </PropertyGroup>
 
 </Project>

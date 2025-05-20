@@ -29,7 +29,7 @@ public class Cryptography
 
         X500DistinguishedName distinguishedName = new($"CN={certificateName},C=US,ST=Georgia,L=Atlanta,O=Soverance Studios,OU=Information");
 
-        using RSA rsa = RSA.Create(2048);
+        using RSA rsa = RSA.Create(4096);
         var request = new CertificateRequest(distinguishedName, rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
 
         request.CertificateExtensions.Add(
@@ -87,7 +87,7 @@ public class Cryptography
 
         X500DistinguishedName distinguishedName = new($"CN={certificateName}");
 
-        using RSA rsa = RSA.Create(2048);
+        using RSA rsa = RSA.Create(4096);
         var request = new CertificateRequest(distinguishedName, rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
 
         request.CertificateExtensions.Add(
