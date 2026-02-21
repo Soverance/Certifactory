@@ -47,6 +47,16 @@ On Windows, these certificates should be installed in the "Trusted Root Certific
 
 On Windows, these certificates should be installed in the "Trusted People" certificate store, as well as in the user's "Personal" certificate store.		
 
+## Test PFX Password
+>Usage:\
+>`certifactory testpfx <certificatePfx> <certificatePassword>`
+>
+>Required Parameters:
+>	- `certificatePfx`			The absolute path to a password-protected PFX certificate bundle.
+>	- `certificatePassword`		The password you wish to test against the PFX file.
+
+If the password is correct, certificate details such as the subject, thumbprint, issuer, and validity dates will be displayed. If the password is incorrect or the PFX file is invalid, an error message will be displayed instead.
+
 ## Export PEM Encoded Files
 >Usage:\
 >`certifactory export <certificatePfx> <certificatePassword> <exportDirectory>`
