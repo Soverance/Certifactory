@@ -77,6 +77,11 @@ class Program
                         System.IO.File.WriteAllBytes(email_exportPath, email_certData);
                         Console.WriteLine("Certificate exported to " + email_exportPath);
                         break;
+                    case "testpfx":
+                        // args[1] = cert pfx path
+                        // args[2] = cert password
+                        Cryptography.testPfxPassword(args[1], args[2]);
+                        break;
                     case "export":
                         // args[1] = cert pfx path
                         // args[2] = cert password

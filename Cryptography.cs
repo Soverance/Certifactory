@@ -164,6 +164,26 @@ public class Cryptography
         return new X509Certificate2(certificate.Export(X509ContentType.Pfx, certificatePassword), certificatePassword, X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.Exportable);
     }
 
+    public static bool testPfxPassword(string certificatePfx, string certificatePassword)
+    {
+        try
+        {
+            X509Certificate2 cert = new X509Certificate2(certificatePfx, certificatePassword, X509KeyStorageFlags.MachineKeySet);
+            Console.WriteLine("Password is correct.");
+            Console.WriteLine("Subject = " + cert.Subject);
+            Console.WriteLine("Thumbprint = " + cert.Thumbprint);
+            Console.WriteLine("Issuer = " + cert.Issuer);
+            Console.WriteLine("Not Before = " + cert.NotBefore);
+            Console.WriteLine("Not After = " + cert.NotAfter);
+            return true;
+        }
+        catch (CryptographicException)
+        {
+            Console.WriteLine("Password is incorrect, or the PFX file is invalid.");
+            return false;
+        }
+    }
+
     public static void exportCertificatePem(string certificatePfx, string certificatePassword, string exportPath)
     {
         X509Certificate2 cert = new X509Certificate2(certificatePfx, certificatePassword, X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.Exportable);
