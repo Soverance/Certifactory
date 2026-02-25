@@ -89,6 +89,12 @@ class Program
                         Cryptography.exportCertificatePem(args[1], args[2], args[3]);
                         Console.WriteLine("PEM formatted certificates exported to " + args[3]);
                         break;
+                    case "ssh":
+                        // args[1] = key name
+                        // args[2] = comment
+                        // args[3] = export directory
+                        Cryptography.generateSshKeyPair(args[1], args[2], args[3]);
+                        break;
                     default:
                         Console.WriteLine("An invalid parameter was specified at position 1.");
                         break;

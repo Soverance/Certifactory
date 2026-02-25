@@ -65,3 +65,14 @@ If the password is correct, certificate details such as the subject, thumbprint,
 >	- `certificatePfx`			The absolute path to a password-protected PFX certificate bundle.
 >	- `certificatePassword`		The password used to secure the PFX certificate bundle.
 >	- `exportDirectory`			The absolute file path to a directory where you intend the resulting PEM files to be exported.
+
+## Generate SSH Keypair
+>Usage:\
+>`certifactory ssh <keyName> <comment> <exportDirectory>`
+>
+>Required Parameters:
+>	- `keyName`				The name used for the output key files. The private key will be saved as `keyName` (no extension) and the public key as `keyName.pub`.
+>	- `comment`				A comment embedded in the public key, typically in `user@hostname` format.
+>	- `exportDirectory`		The absolute file path to a directory where you intend the resulting key files to be exported.
+
+Generates a 4096-bit RSA SSH keypair. The private key is exported in PKCS#1 PEM format and the public key in OpenSSH format (`ssh-rsa`), compatible with all major Linux distributions and services like GitHub. On Linux, remember to set permissions on the private key with `chmod 600`.
