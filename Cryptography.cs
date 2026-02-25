@@ -189,7 +189,7 @@ public class Cryptography
         X509Certificate2 cert = new X509Certificate2(certificatePfx, certificatePassword, X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.Exportable);
 
         string publicKeyString = cert.ExportCertificatePem();
-        RSA privateKeyRSA = cert.GetRSAPrivateKey()!;        
+        RSA privateKeyRSA = cert.GetRSAPrivateKey()!;
         string privateKeyString = privateKeyRSA.ExportRSAPrivateKeyPem();
 
         byte[] publicKey = Encoding.ASCII.GetBytes(publicKeyString);
@@ -207,5 +207,76 @@ public class Cryptography
         System.IO.File.WriteAllBytes(publicCertExportPath, publicKey);
         System.IO.File.WriteAllBytes(publicExportPath, publicKey);
         System.IO.File.WriteAllBytes(privateExportPath, privateKey);
+    }
+
+    public static void generateSshKeyPair(string keyName, string comment, string exportPath)
+    {
+        using RSA rsa = RSA.Create(4096);
+
+        // export private key as PKCS#1 PEM (universally accepted by OpenSSH)
+        string privateKeyPem = rsa.ExportRSAPrivateKeyPem();
+
+        // build the SSH public key in OpenSSH format: ssh-rsa <base64> <comment>
+        RSAParameters rsaParams = rsa.ExportParameters(false);
+        byte[] sshPublicKeyBlob = BuildSshPublicKeyBlob(rsaParams);
+        string publicKeyBase64 = Convert.ToBase64String(sshPublicKeyBlob);
+        string publicKeyString = $"ssh-rsa {publicKeyBase64} {comment}";
+
+        // write files
+        string privateKeyPath = Path.Combine(exportPath, keyName);
+        string publicKeyPath = Path.Combine(exportPath, keyName + ".pub");
+
+        System.IO.File.WriteAllText(privateKeyPath, privateKeyPem);
+        System.IO.File.WriteAllText(publicKeyPath, publicKeyString + "\n");
+
+        Console.WriteLine("SSH keypair generated successfully.");
+        Console.WriteLine("Private key exported to " + privateKeyPath);
+        Console.WriteLine("Public key exported to " + publicKeyPath);
+        Console.WriteLine("NOTE: On Linux, set permissions on the private key with: chmod 600 " + privateKeyPath);
+    }
+
+    private static byte[] BuildSshPublicKeyBlob(RSAParameters rsaParams)
+    {
+        // SSH public key blob format (RFC 4253):
+        // string "ssh-rsa"
+        // mpint  e (exponent)
+        // mpint  n (modulus)
+        using MemoryStream stream = new();
+        WriteSshString(stream, "ssh-rsa");
+        WriteSshBigInt(stream, rsaParams.Exponent!);
+        WriteSshBigInt(stream, rsaParams.Modulus!);
+        return stream.ToArray();
+    }
+
+    private static void WriteSshBytes(MemoryStream stream, byte[] data)
+    {
+        // write 4-byte big-endian length prefix followed by data
+        byte[] length = BitConverter.GetBytes(data.Length);
+        if (BitConverter.IsLittleEndian)
+            Array.Reverse(length);
+        stream.Write(length, 0, 4);
+        stream.Write(data, 0, data.Length);
+    }
+
+    private static void WriteSshString(MemoryStream stream, string value)
+    {
+        WriteSshBytes(stream, Encoding.ASCII.GetBytes(value));
+    }
+
+    private static void WriteSshBigInt(MemoryStream stream, byte[] bigInt)
+    {
+        // SSH mpint format requires a leading zero byte if the MSB is set,
+        // to distinguish positive integers from negative ones
+        if (bigInt[0] >= 0x80)
+        {
+            byte[] padded = new byte[bigInt.Length + 1];
+            padded[0] = 0;
+            Array.Copy(bigInt, 0, padded, 1, bigInt.Length);
+            WriteSshBytes(stream, padded);
+        }
+        else
+        {
+            WriteSshBytes(stream, bigInt);
+        }
     }
 }
