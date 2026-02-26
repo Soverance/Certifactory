@@ -21,9 +21,6 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
-      - name: Publish
-        run: dotnet publish -c Release -r win-x64 --self-contained false
-
       - name: Determine next version
         id: version
         shell: bash
@@ -35,8 +32,19 @@ jobs:
           PATCH=$(echo "$LATEST_TAG" | cut -d. -f3)
           NEW_PATCH=$((PATCH + 1))
           NEW_TAG="${MAJOR}.${MINOR}.${NEW_PATCH}"
+          # strip the leading 'v' for the numeric version
+          NEW_VERSION=$(echo "$NEW_TAG" | sed 's/^v//')
           echo "New tag: $NEW_TAG"
+          echo "New version: $NEW_VERSION"
           echo "tag=$NEW_TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Publish
+        run: >
+          dotnet publish -c Release -r win-x64 --self-contained false
+          -p:AssemblyVersion=${{ steps.version.outputs.version }}
+          -p:FileVersion=${{ steps.version.outputs.version }}
+          -p:Version=${{ steps.version.outputs.version }}
 
       - name: Create release
         uses: softprops/action-gh-release@v2

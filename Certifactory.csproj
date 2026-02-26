@@ -7,7 +7,14 @@
     <Nullable>enable</Nullable>
     <AssemblyName>certifactory</AssemblyName>
     <AssemblyVersion>1.0.0</AssemblyVersion>
+    <FileVersion>1.0.0</FileVersion>
+    <Version>1.0.0</Version>
     <RootNamespace>Soverance.Certifactory</RootNamespace>
+    <Description>Soverance Certifactory Encryption Utility</Description>
+    <Company>Soverance Studios</Company>
+    <Copyright>Soverance Studios</Copyright>
+    <Product>Certifactory</Product>
+    <ApplicationIcon>orb.ico</ApplicationIcon>
     <Platforms>AnyCPU;x64</Platforms>
     <PublishSingleFile>true</PublishSingleFile>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
