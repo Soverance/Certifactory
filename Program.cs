@@ -95,6 +95,14 @@ class Program
                         // args[3] = export directory
                         Cryptography.generateSshKeyPair(args[1], args[2], args[3]);
                         break;
+                    case "gpg":
+                        // args[1] = key name
+                        // args[2] = user name
+                        // args[3] = email
+                        // args[4] = passphrase
+                        // args[5] = export directory
+                        Cryptography.generateGpgKeyPair(args[1], args[2], args[3], args[4], args[5]);
+                        break;
                     default:
                         Console.WriteLine("An invalid parameter was specified at position 1.");
                         break;
