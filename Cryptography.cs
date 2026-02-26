@@ -304,7 +304,7 @@ public class Cryptography
         // export public key ring
         string publicKeyPath = Path.Combine(exportPath, keyName + ".gpg.pub");
         using (FileStream pubStream = new FileStream(publicKeyPath, FileMode.Create))
-        using (ArmoredOutputStream armoredPub = new ArmoredOutputStream(pubStream))
+        using (ArmoredOutputStream armoredPub = new ArmoredOutputStream(pubStream, addVersionHeader: false))
         {
             keyRingGen.GeneratePublicKeyRing().Encode(armoredPub);
         }
@@ -312,7 +312,7 @@ public class Cryptography
         // export secret key ring
         string secretKeyPath = Path.Combine(exportPath, keyName + ".gpg.sec");
         using (FileStream secStream = new FileStream(secretKeyPath, FileMode.Create))
-        using (ArmoredOutputStream armoredSec = new ArmoredOutputStream(secStream))
+        using (ArmoredOutputStream armoredSec = new ArmoredOutputStream(secStream, addVersionHeader: false))
         {
             keyRingGen.GenerateSecretKeyRing().Encode(armoredSec);
         }
