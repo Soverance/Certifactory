@@ -304,7 +304,7 @@ public class Cryptography
         // export public key ring
         string publicKeyPath = Path.Combine(exportPath, keyName + ".gpg.pub");
         using (FileStream pubStream = new FileStream(publicKeyPath, FileMode.Create))
-        using (ArmoredOutputStream armoredPub = new ArmoredOutputStream(pubStream))
+        using (ArmoredOutputStream armoredPub = new ArmoredOutputStream(pubStream, addVersionHeader: false))
         {
             keyRingGen.GeneratePublicKeyRing().Encode(armoredPub);
         }
@@ -312,7 +312,7 @@ public class Cryptography
         // export secret key ring
         string secretKeyPath = Path.Combine(exportPath, keyName + ".gpg.sec");
         using (FileStream secStream = new FileStream(secretKeyPath, FileMode.Create))
-        using (ArmoredOutputStream armoredSec = new ArmoredOutputStream(secStream))
+        using (ArmoredOutputStream armoredSec = new ArmoredOutputStream(secStream, addVersionHeader: false))
         {
             keyRingGen.GenerateSecretKeyRing().Encode(armoredSec);
         }
@@ -461,6 +461,14 @@ public class Cryptography
     {
         try
         {
+            // --import-ownertrust requires the full 40-char fingerprint, not the short key ID
+            string? fingerprint = GetFingerprint(gpgPath, keyId);
+            if (fingerprint == null)
+            {
+                Console.WriteLine("Warning: could not determine fingerprint for key trust.");
+                return;
+            }
+
             // format: <fingerprint>:6:\n  (6 = ultimate trust)
             var process = new Process();
             process.StartInfo.FileName = gpgPath;
@@ -471,8 +479,9 @@ public class Cryptography
             process.StartInfo.UseShellExecute = false;
             process.StartInfo.CreateNoWindow = true;
             process.Start();
-            process.StandardInput.WriteLine($"{keyId}:6:");
+            process.StandardInput.WriteLine($"{fingerprint}:6:");
             process.StandardInput.Close();
+            string err = process.StandardError.ReadToEnd();
             process.WaitForExit();
 
             if (process.ExitCode == 0)
@@ -481,7 +490,6 @@ public class Cryptography
             }
             else
             {
-                string err = process.StandardError.ReadToEnd();
                 Console.WriteLine("Warning: could not set key trust: " + err);
             }
         }
@@ -489,6 +497,43 @@ public class Cryptography
         {
             Console.WriteLine("Warning: could not set key trust: " + ex.Message);
         }
+    }
+
+    /// <summary>
+    /// Gets the full 40-character fingerprint for a key ID by parsing
+    /// "gpg --list-keys --with-colons" output for the fpr field.
+    /// </summary>
+    private static string? GetFingerprint(string gpgPath, string keyId)
+    {
+        try
+        {
+            var process = new Process();
+            process.StartInfo.FileName = gpgPath;
+            process.StartInfo.Arguments = $"--list-keys --with-colons {keyId}";
+            process.StartInfo.RedirectStandardOutput = true;
+            process.StartInfo.RedirectStandardError = true;
+            process.StartInfo.UseShellExecute = false;
+            process.StartInfo.CreateNoWindow = true;
+            process.Start();
+            string output = process.StandardOutput.ReadToEnd();
+            process.WaitForExit();
+
+            // colon-delimited output has fpr lines: fpr:::::::::<fingerprint>:
+            foreach (string line in output.Split('\n'))
+            {
+                string trimmed = line.Trim();
+                if (trimmed.StartsWith("fpr:"))
+                {
+                    string[] fields = trimmed.Split(':');
+                    // fingerprint is in field index 9
+                    if (fields.Length > 9 && !string.IsNullOrEmpty(fields[9]))
+                        return fields[9];
+                }
+            }
+        }
+        catch { }
+
+        return null;
     }
 
     /// <summary>
@@ -696,7 +741,8 @@ public class Cryptography
                 string trimmed = line.Trim();
                 if (trimmed.StartsWith("Home:"))
                 {
-                    return trimmed.Substring("Home:".Length).Trim();
+                    string homePath = trimmed.Substring("Home:".Length).Trim();
+                    return ConvertMsysPathIfNeeded(homePath);
                 }
             }
         }
@@ -711,6 +757,24 @@ public class Cryptography
             return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "gnupg");
 
         return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".gnupg");
+    }
+
+    /// <summary>
+    /// Converts MSYS/Git-Bash-style Unix paths (e.g. /c/Users/scott/.gnupg)
+    /// to Windows paths (e.g. C:\Users\scott\.gnupg) when running on Windows.
+    /// </summary>
+    private static string ConvertMsysPathIfNeeded(string path)
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            return path;
+
+        // match MSYS-style paths: /<drive letter>/...
+        if (path.Length >= 3 && path[0] == '/' && char.IsLetter(path[1]) && path[2] == '/')
+        {
+            return char.ToUpper(path[1]) + ":" + path.Substring(2).Replace('/', '\\');
+        }
+
+        return path;
     }
 
     /// <summary>
@@ -789,20 +853,31 @@ public class Cryptography
             ? "gpg-preset-passphrase.exe"
             : "gpg-preset-passphrase";
 
-        // check same directory as gpg
+        // check same directory as gpg (Gpg4win puts everything in bin/)
         string sameDirPath = Path.Combine(gpgDir, exeName);
         if (File.Exists(sameDirPath))
             return sameDirPath;
 
-        // check libexec subdirectory (common on some installations)
+        // check lib/gnupg/ — Git for Windows bundles it here
+        // e.g. Git/usr/lib/gnupg/gpg-preset-passphrase.exe
+        string libGnupgPath = Path.Combine(gpgDir, "..", "lib", "gnupg", exeName);
+        if (File.Exists(libGnupgPath))
+            return libGnupgPath;
+
+        // check libexec/gnupg/
+        string libexecGnupgPath = Path.Combine(gpgDir, "..", "libexec", "gnupg", exeName);
+        if (File.Exists(libexecGnupgPath))
+            return libexecGnupgPath;
+
+        // check libexec/ directly
         string libexecPath = Path.Combine(gpgDir, "..", "libexec", exeName);
         if (File.Exists(libexecPath))
             return libexecPath;
 
-        // check Gpg4win typical location
-        string gpg4winLibexec = Path.Combine(gpgDir, "..", "bin", exeName);
-        if (File.Exists(gpg4winLibexec))
-            return gpg4winLibexec;
+        // check ../bin/ (alternative layout)
+        string binPath = Path.Combine(gpgDir, "..", "bin", exeName);
+        if (File.Exists(binPath))
+            return binPath;
 
         // try on PATH as last resort
         try
