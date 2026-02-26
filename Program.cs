@@ -39,6 +39,7 @@ class Program
                         // args[1] = cert name
                         // args[2] = cert password
                         // args[3] = export directory
+                        Common.EnsureDirectoryExists(args[3]);
                         X509Certificate2 ca_cert = Cryptography.buildRootCACertificate(args[1], args[2]);
                         Console.WriteLine("Certificate Thumbprint = " + ca_cert.Thumbprint);
                         byte[] ca_certData = ca_cert.Export(X509ContentType.Pfx, args[2]);
@@ -50,10 +51,11 @@ class Program
                     case "server":
                         // args[1] = cert name
                         // args[2] = cert password
-                        // args[3] = server IP                        
+                        // args[3] = server IP
                         // args[4] = root CA PFX path
                         // args[5] = root CA PFX password
                         // args[6] = export directory
+                        Common.EnsureDirectoryExists(args[6]);
                         X509Certificate2 cert = Cryptography.buildSelfSignedServerCertificate(args[1], args[2], args[3], args[4], args[5]);
                         Console.WriteLine("Certificate Thumbprint = " + cert.Thumbprint);
                         byte[] certData = cert.Export(X509ContentType.Pfx, args[2]);
@@ -65,10 +67,11 @@ class Program
                     case "smime":
                         // args[1] = cert name
                         // args[2] = cert password
-                        // args[3] = email address                       
+                        // args[3] = email address
                         // args[4] = root CA PFX path
                         // args[5] = root CA PFX password
                         // args[6] = export directory
+                        Common.EnsureDirectoryExists(args[6]);
                         X509Certificate2 email_cert = Cryptography.buildSelfSignedSmimeCertificate(args[1], args[2], args[3], args[4], args[5]);
                         Console.WriteLine("Certificate Thumbprint = " + email_cert.Thumbprint);
                         byte[] email_certData = email_cert.Export(X509ContentType.Pfx, args[2]);
@@ -86,6 +89,7 @@ class Program
                         // args[1] = cert pfx path
                         // args[2] = cert password
                         // args[3] = export directory
+                        Common.EnsureDirectoryExists(args[3]);
                         Cryptography.exportCertificatePem(args[1], args[2], args[3]);
                         Console.WriteLine("PEM formatted certificates exported to " + args[3]);
                         break;
@@ -93,6 +97,7 @@ class Program
                         // args[1] = key name
                         // args[2] = comment
                         // args[3] = export directory
+                        Common.EnsureDirectoryExists(args[3]);
                         Cryptography.generateSshKeyPair(args[1], args[2], args[3]);
                         break;
                     case "gpg":
@@ -101,6 +106,7 @@ class Program
                         // args[3] = email
                         // args[4] = passphrase
                         // args[5] = export directory
+                        Common.EnsureDirectoryExists(args[5]);
                         Cryptography.generateGpgKeyPair(args[1], args[2], args[3], args[4], args[5]);
                         break;
                     default:
