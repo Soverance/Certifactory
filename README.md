@@ -1,136 +1,151 @@
 # Certifactory
+
 A dotnet certificate generation command line utility.
 
-You can use this CLI tool to quickly create basic certificate infrastructure for your organization.  Create your own private root certificate authority, and sign custom server certificates using your private CA. You can also generate user-specific S/MIME certificates, used for secure email and document signing.
+You can use this CLI tool to quickly create basic certificate infrastructure for your organization. Create your own private root certificate authority, and sign custom server certificates using your private CA. You can also generate user-specific S/MIME certificates, used for secure email and document signing.
 
 Generated certificates are exported as a password-protected PFX bundle, good for importing the certs into Windows certificate stores.
 
 You can then use this utility to export the PFX bundle into decrypted PEM encoded files, good for installing the certs on Linux operating systems.
 
+All commands that accept an `exportDirectory` parameter will automatically create the directory if it does not exist.
+
 # Commands
-## Generate Root CA Certificate
->Usage:\
->`certifactory ca <certificateName> <certificatePassword> <exportDirectory>`
->
->Required Parameters:
->	* `certificateName`			The certificate name for the root certificate authority, i.e. "encryption.soverance.com".
->	* `certificatePassword`		The password used to secure the resulting PFX certificate bundle.
->	* `exportDirectory`			The absolute file path to a directory where you intend the resulting PFX file to be exported.
-	
-On Windows, these certificates should be installed in the "Trusted Root Certification Authority" certificate store.	
 
+<details>
+<summary><strong>ca</strong> — Generate Root CA Certificate</summary>
 
-## Generate Server Certificate
->Usage:\
->`certifactory server <certificateName> <certificatePassword> <serverIP> <rootCA> <rootCAPassword> <exportDirectory>`
->
->Required Parameters:	
->	- `certificateName`			The certificate name for the server application, i.e. "soverance.com".
->	- `certificatePassword`		The password used to secure the resulting PFX certificate bundle.
->	- `serverIP`				The IP address of the server where this certificate will be installed.
->	- `rootCA`					The absolute path of the root certificate authority that will sign this certificate.
->	- `rootCAPassword`			The password used to secure the Root CA PFX file.
->	- `exportDirectory`			The absolute file path to a directory where you intend the resulting PFX file to be exported.
-	
-
-## Generate S/MIME Certificate
->Usage:\
->`certifactory smime <certificateName> <certificatePassword> <userEmail> <exportDirectory> <rootCA> <rootCAPassword> <exportDirectory>`
->
->Required Parameters:	
->	- `certificateName`			The certificate name. For ease of use, you should specify an email address, i.e. "scott@soverance.com".
->	- `certificatePassword`		The password used to secure the resulting PFX certificate bundle.
->	- `userEmail`				The email address of the of the user account for which you wish to generate the certificate.
->	- `rootCA`					The absolute path of the root certificate authority that will sign this certificate.
->	- `rootCAPassword`			The password used to secure the Root CA PFX file.
->	- `exportDirectory`			The absolute file path to a directory where you intend the resulting PFX file to be exported.
-
-On Windows, these certificates should be installed in the "Trusted People" certificate store, as well as in the user's "Personal" certificate store.		
-
-## Test PFX Password
->Usage:\
->`certifactory testpfx <certificatePfx> <certificatePassword>`
->
->Required Parameters:
->	- `certificatePfx`			The absolute path to a password-protected PFX certificate bundle.
->	- `certificatePassword`		The password you wish to test against the PFX file.
-
-If the password is correct, certificate details such as the subject, thumbprint, issuer, and validity dates will be displayed. If the password is incorrect or the PFX file is invalid, an error message will be displayed instead.
-
-## Export PEM Encoded Files
->Usage:\
->`certifactory export <certificatePfx> <certificatePassword> <exportDirectory>`
->
->Required Parameters:
->	- `certificatePfx`			The absolute path to a password-protected PFX certificate bundle.
->	- `certificatePassword`		The password used to secure the PFX certificate bundle.
->	- `exportDirectory`			The absolute file path to a directory where you intend the resulting PEM files to be exported.
-
-## Generate SSH Keypair
->Usage:\
->`certifactory ssh <keyName> <comment> <exportDirectory>`
->
->Required Parameters:
->	- `keyName`				The name used for the output key files. The private key will be saved as `keyName` (no extension) and the public key as `keyName.pub`.
->	- `comment`				A comment embedded in the public key, typically in `user@hostname` format.
->	- `exportDirectory`		The absolute file path to a directory where you intend the resulting key files to be exported.
-
-Generates a 4096-bit RSA SSH keypair. The private key is exported in PKCS#1 PEM format and the public key in OpenSSH format (`ssh-rsa`), compatible with all major Linux distributions and services like GitHub. On Linux, remember to set permissions on the private key with `chmod 600`.
-
-## Generate GPG Keypair
->Usage:\
->`certifactory gpg <keyName> <userName> <email> <passphrase> <exportDirectory>`
->
->Required Parameters:
->	- `keyName`				The name used for the output key files. The public key will be saved as `keyName.gpg.pub` and the secret key as `keyName.gpg.sec`.
->	- `userName`			The real name for the GPG User ID (e.g. `"Scott McCutchen"`). This should match your GitHub display name.
->	- `email`				The email address for the GPG User ID. This must match the email address associated with your GitHub account.
->	- `passphrase`			The passphrase used to protect the private key.
->	- `exportDirectory`		The absolute file path to a directory where you intend the resulting key files to be exported.
-
-Generates a 4096-bit RSA GPG keypair suitable for GitHub commit signing. The keypair includes a master key (sign + certify) and an encryption subkey. Keys are exported in ASCII-armored OpenPGP format.
-
-### Automatic Configuration (when `gpg` is in PATH)
-
-If `gpg` is found on the system, Certifactory will automatically:
-
-1. **Import the secret key** into your GPG keyring via `gpg --import`
-2. **Set ownertrust to ultimate** so GPG does not display trust warnings when signing
-3. **Configure gpg-agent** for long-lived passphrase caching by updating `gpg-agent.conf` with:
-   ```
-   default-cache-ttl 34560000
-   max-cache-ttl 34560000
-   allow-preset-passphrase
-   ```
-4. **Pre-seed the passphrase** into `gpg-agent` using `gpg-preset-passphrase`, so you are never prompted for the passphrase during commit signing
-5. **Configure git globally** for commit signing:
-   ```
-   git config --global user.signingkey <KEY_ID>
-   git config --global commit.gpgsign true
-   git config --global gpg.program <path-to-gpg>
-   ```
-   Setting `gpg.program` ensures git uses the same `gpg.exe` that holds the imported key, avoiding conflicts with the GPG binary bundled inside Git for Windows.
-
-After automatic configuration, commit signing should work immediately with no further setup.
-
-### Manual Configuration (when `gpg` is not in PATH)
-
-If `gpg` is not found, you can import and configure manually:
 ```
-gpg --import <keyName>.gpg.sec
-git config --global user.signingkey <KEY_ID>
-git config --global commit.gpgsign true
-git config --global gpg.program "C:\path\to\gpg.exe"
+certifactory ca <certificateName> <certificatePassword> <exportDirectory>
 ```
 
-To avoid being prompted for the passphrase on every commit, configure `gpg-agent.conf` (located at `%APPDATA%\gnupg\gpg-agent.conf` on Windows, or `~/.gnupg/gpg-agent.conf` on Linux/macOS) with:
+| Parameter | Description |
+|---|---|
+| `certificateName` | The certificate name for the root CA, i.e. `"encryption.soverance.com"`. |
+| `certificatePassword` | The password used to secure the resulting PFX bundle. |
+| `exportDirectory` | The directory where the resulting PFX file will be exported. |
+
+On Windows, install in the **Trusted Root Certification Authority** certificate store.
+
+[Full documentation](docs/ca.md)
+
+</details>
+
+<details>
+<summary><strong>server</strong> — Generate Server Certificate</summary>
+
 ```
-default-cache-ttl 34560000
-max-cache-ttl 34560000
+certifactory server <certificateName> <certificatePassword> <serverIP> <rootCA> <rootCAPassword> <exportDirectory>
 ```
 
-Then restart the agent with `gpg-connect-agent reloadagent /bye`.
+| Parameter | Description |
+|---|---|
+| `certificateName` | The certificate name for the server application, i.e. `"soverance.com"`. |
+| `certificatePassword` | The password used to secure the resulting PFX bundle. |
+| `serverIP` | The IP address of the server where this certificate will be installed. |
+| `rootCA` | The absolute path of the root CA PFX that will sign this certificate. |
+| `rootCAPassword` | The password used to secure the Root CA PFX file. |
+| `exportDirectory` | The directory where the resulting PFX file will be exported. |
 
-### Adding the Key to GitHub
+[Full documentation](docs/server.md)
 
-To add the public key to GitHub, copy the contents of the `.gpg.pub` file and paste it into **GitHub > Settings > SSH and GPG keys > New GPG key**.
+</details>
+
+<details>
+<summary><strong>smime</strong> — Generate S/MIME Certificate</summary>
+
+```
+certifactory smime <certificateName> <certificatePassword> <userEmail> <rootCA> <rootCAPassword> <exportDirectory>
+```
+
+| Parameter | Description |
+|---|---|
+| `certificateName` | The certificate name, i.e. `"scott@soverance.com"`. |
+| `certificatePassword` | The password used to secure the resulting PFX bundle. |
+| `userEmail` | The email address of the user account. |
+| `rootCA` | The absolute path of the root CA PFX that will sign this certificate. |
+| `rootCAPassword` | The password used to secure the Root CA PFX file. |
+| `exportDirectory` | The directory where the resulting PFX file will be exported. |
+
+On Windows, install in the **Trusted People** and user's **Personal** certificate stores.
+
+[Full documentation](docs/smime.md)
+
+</details>
+
+<details>
+<summary><strong>testpfx</strong> — Test PFX Password</summary>
+
+```
+certifactory testpfx <certificatePfx> <certificatePassword>
+```
+
+| Parameter | Description |
+|---|---|
+| `certificatePfx` | The absolute path to a password-protected PFX certificate bundle. |
+| `certificatePassword` | The password you wish to test against the PFX file. |
+
+Displays certificate details (subject, thumbprint, issuer, validity dates) if the password is correct, or an error message if incorrect.
+
+[Full documentation](docs/testpfx.md)
+
+</details>
+
+<details>
+<summary><strong>export</strong> — Export PEM Encoded Files</summary>
+
+```
+certifactory export <certificatePfx> <certificatePassword> <exportDirectory>
+```
+
+| Parameter | Description |
+|---|---|
+| `certificatePfx` | The absolute path to a password-protected PFX certificate bundle. |
+| `certificatePassword` | The password used to secure the PFX certificate bundle. |
+| `exportDirectory` | The directory where the resulting PEM files will be exported. |
+
+Exports `.cer`, `.crt.pem`, and `.key.pem` files for use on Linux systems.
+
+[Full documentation](docs/export.md)
+
+</details>
+
+<details>
+<summary><strong>ssh</strong> — Generate SSH Keypair</summary>
+
+```
+certifactory ssh <keyName> <comment> <exportDirectory>
+```
+
+| Parameter | Description |
+|---|---|
+| `keyName` | The name for the output key files (`keyName` and `keyName.pub`). |
+| `comment` | A comment embedded in the public key, typically `user@hostname`. |
+| `exportDirectory` | The directory where the resulting key files will be exported. |
+
+Generates a 4096-bit RSA SSH keypair in PKCS#1 PEM (private) and OpenSSH (public) formats. On Linux, remember to `chmod 600` the private key.
+
+[Full documentation](docs/ssh.md)
+
+</details>
+
+<details>
+<summary><strong>gpg</strong> — Generate GPG Keypair</summary>
+
+```
+certifactory gpg <keyName> <userName> <email> <passphrase> <exportDirectory>
+```
+
+| Parameter | Description |
+|---|---|
+| `keyName` | The name for the output key files (`keyName.gpg.pub` and `keyName.gpg.sec`). |
+| `userName` | The real name for the GPG User ID. Should match your GitHub display name. |
+| `email` | The email for the GPG User ID. Must match your GitHub account email. |
+| `passphrase` | The passphrase used to protect the private key. |
+| `exportDirectory` | The directory where the resulting key files will be exported. |
+
+Generates a 4096-bit RSA GPG keypair for GitHub commit signing. If `gpg` is found in PATH, Certifactory will automatically import the key, configure gpg-agent for passphrase caching, and set up git for commit signing.
+
+[Full documentation](docs/gpg.md)
+
+</details>
