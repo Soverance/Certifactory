@@ -333,20 +333,26 @@ public class Cryptography
         if (gpgPath != null)
         {
             Console.WriteLine($"GPG found at: {gpgPath}");
-            Console.WriteLine("Attempting to import secret key...");
 
-            // 1. Import the secret key
+            // 1. Configure gpg-agent BEFORE import so loopback pinentry is allowed
+            ConfigureGpgAgent(gpgPath);
+
+            // 2. Import the secret key using loopback pinentry to avoid GUI prompt
+            Console.WriteLine("Attempting to import secret key...");
             bool importSuccess = false;
             try
             {
                 var importProcess = new Process();
                 importProcess.StartInfo.FileName = gpgPath;
-                importProcess.StartInfo.Arguments = $"--import \"{secretKeyPath}\"";
+                importProcess.StartInfo.Arguments = $"--batch --pinentry-mode loopback --passphrase-fd 0 --import \"{secretKeyPath}\"";
+                importProcess.StartInfo.RedirectStandardInput = true;
                 importProcess.StartInfo.RedirectStandardOutput = true;
                 importProcess.StartInfo.RedirectStandardError = true;
                 importProcess.StartInfo.UseShellExecute = false;
                 importProcess.StartInfo.CreateNoWindow = true;
                 importProcess.Start();
+                importProcess.StandardInput.Write(passphrase);
+                importProcess.StandardInput.Close();
                 string importOutput = importProcess.StandardError.ReadToEnd();
                 importProcess.WaitForExit();
 
@@ -367,11 +373,8 @@ public class Cryptography
 
             if (importSuccess)
             {
-                // 2. Set ownertrust to ultimate for our key
+                // 3. Set ownertrust to ultimate for our key
                 SetKeyTrustUltimate(gpgPath, keyId);
-
-                // 3. Configure gpg-agent for long-lived passphrase caching
-                ConfigureGpgAgent(gpgPath);
 
                 // 4. Pre-seed the passphrase into gpg-agent so user is never prompted
                 PresetPassphrase(gpgPath, keyId, passphrase);
@@ -512,7 +515,8 @@ public class Cryptography
             {
                 { "default-cache-ttl", "34560000" },
                 { "max-cache-ttl", "34560000" },
-                { "allow-preset-passphrase", "" }
+                { "allow-preset-passphrase", "" },
+                { "allow-loopback-pinentry", "" }
             };
 
             string updatedContent = existingContent;

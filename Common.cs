@@ -41,6 +41,17 @@ public class Common
         return baseDir;
     }
 
+    public static string EnsureDirectoryExists(string path)
+    {
+        string fullPath = Path.GetFullPath(path);
+        if (!Directory.Exists(fullPath))
+        {
+            Directory.CreateDirectory(fullPath);
+            Console.WriteLine("Created directory: " + fullPath);
+        }
+        return fullPath;
+    }
+
     public static byte[] GetRandomByteArray(int size)
     {
         Random rnd = new();
