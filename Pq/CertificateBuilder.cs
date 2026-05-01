@@ -71,30 +71,196 @@ public static class CertificateBuilder
     {
         ValidateSpec(spec);
 
+        Org.BouncyCastle.X509.X509Certificate bcCert =
+            spec.Signer is HybridSigner h
+                ? BuildHybrid(spec, h)
+                : BuildSinglePass(spec);
+
+        // For hybrid, the PFX stores only the PRIMARY private key — the cert's
+        // SPKI carries the primary public key, so the matching private is the
+        // primary's. The ALT private key persistence is Task 6.7's scope.
+        AsymmetricKeyParameter keyForPfx = spec.Signer is HybridSigner hs
+            ? hs.PrimarySigner.KeyPair.Private
+            : spec.Signer.KeyPair.Private;
+
+        byte[] pfxBytes = PfxExporter.ToPfxBytes(
+            bcCert, keyForPfx, spec.CommonName, spec.Password);
+        var cert = new X509Certificate2(pfxBytes, spec.Password,
+            X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.Exportable);
+        return (cert, pfxBytes);
+    }
+
+    private static Org.BouncyCastle.X509.X509Certificate BuildSinglePass(CertificateSpec spec)
+    {
         var gen = new X509V3CertificateGenerator();
         var subject = BuildSubject(spec);
+        var issuer = spec.Issuer is null
+            ? subject
+            : DotNetUtilities.FromX509Certificate(spec.Issuer.Certificate).SubjectDN;
+
         gen.SetSerialNumber(new BigInteger(159, Random).Abs().Add(BigInteger.One));
         gen.SetSubjectDN(subject);
-        gen.SetIssuerDN(spec.Issuer is null
-            ? subject
-            : DotNetUtilities.FromX509Certificate(spec.Issuer.Certificate).SubjectDN);
+        gen.SetIssuerDN(issuer);
         gen.SetNotBefore(DateTime.UtcNow.AddDays(-1));
         gen.SetNotAfter(DateTime.UtcNow.AddDays(GetValidityDays(spec.Purpose)));
         gen.SetPublicKey(spec.Signer.KeyPair.Public);
 
-        AddCommonExtensions(gen, spec);
+        foreach (var (oid, critical, value) in CollectExtensions(spec))
+        {
+            gen.AddExtension(oid, critical, value);
+        }
 
         ISignatureFactory sigFactory = spec.Issuer is null
             ? spec.Signer.CreateSignatureFactory()
             : spec.Issuer.Signer.CreateSignatureFactory();
 
-        Org.BouncyCastle.X509.X509Certificate bcCert = gen.Generate(sigFactory);
+        return gen.Generate(sigFactory);
+    }
 
-        byte[] pfxBytes = PfxExporter.ToPfxBytes(
-            bcCert, spec.Signer.KeyPair.Private, spec.CommonName, spec.Password);
-        var cert = new X509Certificate2(pfxBytes, spec.Password,
-            X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.Exportable);
-        return (cert, pfxBytes);
+    private static Org.BouncyCastle.X509.X509Certificate BuildHybrid(
+        CertificateSpec spec, HybridSigner subjectHybridSigner)
+    {
+        var subject = BuildSubject(spec);
+        var issuer = spec.Issuer is null
+            ? subject
+            : DotNetUtilities.FromX509Certificate(spec.Issuer.Certificate).SubjectDN;
+        var serial = new BigInteger(159, Random).Abs().Add(BigInteger.One);
+
+        // Determine the issuer's hybrid signer:
+        //  - self-signed root CA: subject IS the issuer
+        //  - leaf cert: must be issued by a hybrid CA (so we have an alt signer too)
+        HybridSigner issuerHybridSigner;
+        if (spec.Issuer is null)
+        {
+            issuerHybridSigner = subjectHybridSigner;
+        }
+        else if (spec.Issuer.Signer is HybridSigner h)
+        {
+            issuerHybridSigner = h;
+        }
+        else
+        {
+            throw new InvalidOperationException(
+                "Hybrid leaf certificates require a hybrid issuer CA. " +
+                "Issue this leaf from a CA that was generated with --algorithm hybrid.");
+        }
+
+        var exts = CollectExtensions(spec);
+
+        return HybridCertificateBuilder.Build(
+            subjectPrimarySigner: subjectHybridSigner.PrimarySigner,
+            subjectAltSigner: subjectHybridSigner.AltSigner,
+            issuerPrimarySigner: issuerHybridSigner.PrimarySigner,
+            issuerAltSigner: issuerHybridSigner.AltSigner,
+            subject: subject,
+            issuer: issuer,
+            serial: serial,
+            notBefore: DateTime.UtcNow.AddDays(-1),
+            notAfter: DateTime.UtcNow.AddDays(GetValidityDays(spec.Purpose)),
+            normalExtensions: exts);
+    }
+
+    /// <summary>
+    /// Returns the per-purpose extension list as (oid, critical, value) tuples.
+    /// Both BuildSinglePass and BuildHybrid consume this — keep it the only
+    /// source of cert-extension truth.
+    /// </summary>
+    private static List<(DerObjectIdentifier oid, bool critical, Asn1Encodable value)>
+        CollectExtensions(CertificateSpec spec)
+    {
+        // For hybrid, the cert's standard SubjectKeyIdentifier and SPKI use
+        // the PRIMARY public key (the alt key lives in subjectAltPublicKeyInfo).
+        var pubKey = spec.Signer is HybridSigner hs
+            ? hs.PrimarySigner.KeyPair.Public
+            : spec.Signer.KeyPair.Public;
+        var subjectSpki = SubjectPublicKeyInfoFactory.CreateSubjectPublicKeyInfo(pubKey);
+
+        var list = new List<(DerObjectIdentifier, bool, Asn1Encodable)>();
+
+        switch (spec.Purpose)
+        {
+            case CertificatePurpose.RootCa:
+                list.Add((X509Extensions.BasicConstraints, true,
+                    new BasicConstraints(cA: true)));
+                list.Add((X509Extensions.KeyUsage, true,
+                    new KeyUsage(KeyUsage.KeyCertSign | KeyUsage.CrlSign)));
+                list.Add((X509Extensions.SubjectKeyIdentifier, false,
+                    X509ExtensionUtilities.CreateSubjectKeyIdentifier(subjectSpki)));
+                list.Add((X509Extensions.ExtendedKeyUsage, false,
+                    new ExtendedKeyUsage(new DerObjectIdentifier[]
+                    {
+                        KeyPurposeID.id_kp_serverAuth,
+                        KeyPurposeID.id_kp_clientAuth,
+                        KeyPurposeID.id_kp_codeSigning,
+                        KeyPurposeID.id_kp_emailProtection,
+                        new DerObjectIdentifier("1.3.6.1.4.1.311.10.3.12")
+                    })));
+                break;
+
+            case CertificatePurpose.Server:
+                list.Add((X509Extensions.BasicConstraints, true,
+                    new BasicConstraints(cA: false)));
+                list.Add((X509Extensions.KeyUsage, true,
+                    new KeyUsage(KeyUsage.DigitalSignature
+                        | KeyUsage.KeyEncipherment | KeyUsage.DataEncipherment)));
+                list.Add((X509Extensions.ExtendedKeyUsage, false,
+                    new ExtendedKeyUsage(KeyPurposeID.id_kp_serverAuth, KeyPurposeID.id_kp_clientAuth)));
+                list.Add((X509Extensions.SubjectKeyIdentifier, false,
+                    X509ExtensionUtilities.CreateSubjectKeyIdentifier(subjectSpki)));
+                if (spec.Issuer is not null)
+                {
+                    var issuerSpki = SubjectPublicKeyInfoFactory.CreateSubjectPublicKeyInfo(
+                        DotNetUtilities.FromX509Certificate(spec.Issuer.Certificate).GetPublicKey());
+                    list.Add((X509Extensions.AuthorityKeyIdentifier, false,
+                        X509ExtensionUtilities.CreateAuthorityKeyIdentifier(issuerSpki)));
+                }
+                list.Add((X509Extensions.SubjectAlternativeName, false,
+                    BuildServerSan(spec)));
+                break;
+
+            case CertificatePurpose.Smime:
+                list.Add((X509Extensions.BasicConstraints, true,
+                    new BasicConstraints(cA: false)));
+                list.Add((X509Extensions.KeyUsage, true,
+                    new KeyUsage(KeyUsage.NonRepudiation | KeyUsage.DigitalSignature
+                        | KeyUsage.KeyEncipherment | KeyUsage.DataEncipherment)));
+                list.Add((X509Extensions.ExtendedKeyUsage, false,
+                    new ExtendedKeyUsage(new DerObjectIdentifier[]
+                    {
+                        KeyPurposeID.id_kp_emailProtection,
+                        new DerObjectIdentifier("1.3.6.1.4.1.311.10.3.12")
+                    })));
+                list.Add((X509Extensions.SubjectKeyIdentifier, false,
+                    X509ExtensionUtilities.CreateSubjectKeyIdentifier(subjectSpki)));
+                if (spec.Issuer is not null)
+                {
+                    var issuerSpki = SubjectPublicKeyInfoFactory.CreateSubjectPublicKeyInfo(
+                        DotNetUtilities.FromX509Certificate(spec.Issuer.Certificate).GetPublicKey());
+                    list.Add((X509Extensions.AuthorityKeyIdentifier, false,
+                        X509ExtensionUtilities.CreateAuthorityKeyIdentifier(issuerSpki)));
+                }
+                list.Add((X509Extensions.SubjectAlternativeName, false,
+                    new GeneralNames(new[]
+                    {
+                        new GeneralName(GeneralName.Rfc822Name, spec.EmailAddress)
+                    })));
+                break;
+        }
+
+        return list;
+    }
+
+    private static GeneralNames BuildServerSan(CertificateSpec spec)
+    {
+        var names = new List<GeneralName>
+        {
+            new GeneralName(GeneralName.DnsName, spec.CommonName)
+        };
+        if (!string.IsNullOrEmpty(spec.ServerIp))
+        {
+            names.Add(new GeneralName(GeneralName.IPAddress, spec.ServerIp));
+        }
+        return new GeneralNames(names.ToArray());
     }
 
     private static X509Name BuildSubject(CertificateSpec spec) => spec.Purpose switch
@@ -121,100 +287,5 @@ public static class CertificateBuilder
             throw new ArgumentException(
                 "S/MIME certificates require an email address.", nameof(spec));
         }
-    }
-
-    private static void AddCommonExtensions(
-        X509V3CertificateGenerator gen, CertificateSpec spec)
-    {
-        // TODO(Task 6.3): SubjectKeyIdentifierStructure and AuthorityKeyIdentifierStructure
-        // are [Obsolete] in BC 2.6.2 (replaced by X509ExtensionUtilities). Defer the
-        // migration to Phase 6's CollectExtensions refactor, which restructures these
-        // call sites anyway. Tracked: 5 CS0618 warnings.
-        switch (spec.Purpose)
-        {
-            case CertificatePurpose.RootCa:
-                gen.AddExtension(X509Extensions.BasicConstraints, true,
-                    new BasicConstraints(cA: true));
-                gen.AddExtension(X509Extensions.KeyUsage, true,
-                    new KeyUsage(KeyUsage.KeyCertSign | KeyUsage.CrlSign));
-                gen.AddExtension(X509Extensions.SubjectKeyIdentifier, false,
-                    new SubjectKeyIdentifierStructure(spec.Signer.KeyPair.Public));
-                gen.AddExtension(X509Extensions.ExtendedKeyUsage, false,
-                    new ExtendedKeyUsage(new DerObjectIdentifier[]
-                    {
-                        KeyPurposeID.id_kp_serverAuth,
-                        KeyPurposeID.id_kp_clientAuth,
-                        KeyPurposeID.id_kp_codeSigning,
-                        KeyPurposeID.id_kp_emailProtection,
-                        new DerObjectIdentifier("1.3.6.1.4.1.311.10.3.12")
-                    }));
-                break;
-
-            case CertificatePurpose.Server:
-                gen.AddExtension(X509Extensions.BasicConstraints, true,
-                    new BasicConstraints(cA: false));
-                gen.AddExtension(X509Extensions.KeyUsage, true,
-                    new KeyUsage(KeyUsage.DigitalSignature
-                        | KeyUsage.KeyEncipherment | KeyUsage.DataEncipherment));
-                gen.AddExtension(X509Extensions.ExtendedKeyUsage, false,
-                    new ExtendedKeyUsage(KeyPurposeID.id_kp_serverAuth, KeyPurposeID.id_kp_clientAuth));
-                gen.AddExtension(X509Extensions.SubjectKeyIdentifier, false,
-                    new SubjectKeyIdentifierStructure(spec.Signer.KeyPair.Public));
-                if (spec.Issuer is not null)
-                {
-                    gen.AddExtension(X509Extensions.AuthorityKeyIdentifier, false,
-                        new AuthorityKeyIdentifierStructure(
-                            DotNetUtilities.FromX509Certificate(spec.Issuer.Certificate)));
-                }
-                AddServerSan(gen, spec);
-                break;
-
-            case CertificatePurpose.Smime:
-                gen.AddExtension(X509Extensions.BasicConstraints, true,
-                    new BasicConstraints(cA: false));
-                gen.AddExtension(X509Extensions.KeyUsage, true,
-                    new KeyUsage(KeyUsage.NonRepudiation | KeyUsage.DigitalSignature
-                        | KeyUsage.KeyEncipherment | KeyUsage.DataEncipherment));
-                gen.AddExtension(X509Extensions.ExtendedKeyUsage, false,
-                    new ExtendedKeyUsage(new DerObjectIdentifier[]
-                    {
-                        KeyPurposeID.id_kp_emailProtection,
-                        new DerObjectIdentifier("1.3.6.1.4.1.311.10.3.12")
-                    }));
-                gen.AddExtension(X509Extensions.SubjectKeyIdentifier, false,
-                    new SubjectKeyIdentifierStructure(spec.Signer.KeyPair.Public));
-                if (spec.Issuer is not null)
-                {
-                    gen.AddExtension(X509Extensions.AuthorityKeyIdentifier, false,
-                        new AuthorityKeyIdentifierStructure(
-                            DotNetUtilities.FromX509Certificate(spec.Issuer.Certificate)));
-                }
-                AddSmimeSan(gen, spec);
-                break;
-        }
-    }
-
-    private static void AddServerSan(X509V3CertificateGenerator gen, CertificateSpec spec)
-    {
-        var names = new List<GeneralName>
-        {
-            new GeneralName(GeneralName.DnsName, spec.CommonName)
-        };
-        if (!string.IsNullOrEmpty(spec.ServerIp))
-        {
-            names.Add(new GeneralName(GeneralName.IPAddress, spec.ServerIp));
-        }
-        gen.AddExtension(X509Extensions.SubjectAlternativeName, false,
-            new GeneralNames(names.ToArray()));
-    }
-
-    private static void AddSmimeSan(X509V3CertificateGenerator gen, CertificateSpec spec)
-    {
-        var names = new[]
-        {
-            new GeneralName(GeneralName.Rfc822Name, spec.EmailAddress)
-        };
-        gen.AddExtension(X509Extensions.SubjectAlternativeName, false,
-            new GeneralNames(names));
     }
 }
