@@ -14,3 +14,13 @@ bld/
 # Visual Studio cache/options directory
 .vs/
 *.user
+
+# Claude CLI
+.claude/*
+!.claude/settings.json
+!.claude/commands/
+!.claude/commands/**
+.superpowers/*
+**/.superpowers/*
+docs/specs/*
+docs/superpowers/*
