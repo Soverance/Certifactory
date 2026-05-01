@@ -184,3 +184,144 @@ public static class HybridCertificateBuilder
         return ((IBlockResult)streamCalc.GetResult()).Collect();
     }
 }
+
+/// <summary>
+/// Verifies the alt signature on a hybrid cert. Reconstructs the pre-TBS
+/// (TBS minus altSignatureValue), then verifies the alt sig over that
+/// against the alt public key from subjectAltPublicKeyInfo.
+///
+/// <para>
+/// <b>Self-signed certs only.</b> This single-argument overload assumes the
+/// issuer's alt public key equals the subject's alt public key (i.e. the cert
+/// is self-signed). For leaf certs whose alt sig was produced by a hybrid CA's
+/// alt private key, use the two-argument overload that takes the issuer cert
+/// separately. (Added in Task 6.6.)
+/// </para>
+/// </summary>
+public static class HybridVerifier
+{
+    /// <summary>
+    /// Verifies the alt signature on a self-signed hybrid cert against its
+    /// own alt public key (subject == issuer for self-signed). For a leaf or
+    /// intermediate, use the two-argument overload.
+    /// </summary>
+    public static bool VerifyAltSignature(System.Security.Cryptography.X509Certificates.X509Certificate2 cert)
+    {
+        var bcCert = DotNetUtilities.FromX509Certificate(cert);
+        if (!bcCert.IssuerDN.Equivalent(bcCert.SubjectDN))
+        {
+            throw new InvalidOperationException(
+                "VerifyAltSignature(cert) only supports self-signed certs (subject == issuer). " +
+                "For a leaf or intermediate cert, use VerifyAltSignature(cert, issuerCert).");
+        }
+        return VerifyAltSignature(cert, cert);
+    }
+
+    /// <summary>
+    /// Verifies the alt signature on a hybrid cert against the issuer's alt
+    /// public key. Reconstructs the cert's pre-TBS (TBS minus altSignatureValue)
+    /// and verifies the alt sig over those bytes using the alt pubkey from the
+    /// issuer's subjectAltPublicKeyInfo extension.
+    ///
+    /// For self-signed certs, pass the same cert as both arguments.
+    /// </summary>
+    /// <remarks>
+    /// Returns false if the alt signature does not verify against the issuer's
+    /// alt public key — for example, when the supplied issuer is the wrong
+    /// hybrid CA. Throws only on malformed input (missing/partial alt extensions
+    /// on cert, missing subjectAltPublicKeyInfo on issuer); a clean false is
+    /// reserved for genuine cryptographic verification failure.
+    /// </remarks>
+    public static bool VerifyAltSignature(
+        System.Security.Cryptography.X509Certificates.X509Certificate2 cert,
+        System.Security.Cryptography.X509Certificates.X509Certificate2 issuerCert)
+    {
+        var bcCert = DotNetUtilities.FromX509Certificate(cert);
+        var bcIssuer = DotNetUtilities.FromX509Certificate(issuerCert);
+
+        // Cert's 3 alt extensions
+        var certSpkiBytes = bcCert.GetExtensionValue(HybridExtensions.SubjectAltPublicKeyInfoOid);
+        var algIdBytes = bcCert.GetExtensionValue(HybridExtensions.AltSignatureAlgorithmOid);
+        var sigValBytes = bcCert.GetExtensionValue(HybridExtensions.AltSignatureValueOid);
+
+        bool certHasAny = certSpkiBytes is not null || algIdBytes is not null || sigValBytes is not null;
+        bool certHasAll = certSpkiBytes is not null && algIdBytes is not null && sigValBytes is not null;
+
+        if (!certHasAny)
+        {
+            throw new InvalidOperationException(
+                "Cert has no alt-sig extensions; not a hybrid cert.");
+        }
+        if (!certHasAll)
+        {
+            throw new InvalidOperationException(
+                "Cert is malformed: it has some but not all of the X.509:2019 alt-sig extensions " +
+                "(subjectAltPublicKeyInfo / altSignatureAlgorithm / altSignatureValue).");
+        }
+
+        // Issuer must have subjectAltPublicKeyInfo (the alt pubkey we verify against).
+        // For self-signed callers (cert == issuer), this is guaranteed non-null by the
+        // certHasAll check above; kept here for symmetry with the leaf-verifying case.
+        var issuerAltSpkiBytes = bcIssuer.GetExtensionValue(HybridExtensions.SubjectAltPublicKeyInfoOid);
+        if (issuerAltSpkiBytes is null)
+        {
+            throw new InvalidOperationException(
+                "Issuer cert has no subjectAltPublicKeyInfo extension; cannot verify a " +
+                "hybrid leaf's alt signature without the issuer's alt public key. " +
+                "Issuer is likely not a hybrid CA.");
+        }
+
+        var altAlg = AlgorithmIdentifier.GetInstance(
+            Asn1Object.FromByteArray(algIdBytes!.GetOctets()));
+        var altSigBits = DerBitString.GetInstance(
+            Asn1Object.FromByteArray(sigValBytes!.GetOctets()));
+        var issuerAltSpki = SubjectPublicKeyInfo.GetInstance(
+            Asn1Object.FromByteArray(issuerAltSpkiBytes.GetOctets()));
+
+        // Reconstruct preTBS = cert's TBS with altSignatureValue removed
+        byte[] preTbsDer = ReconstructPreTbsForAltSig(bcCert.CertificateStructure.TbsCertificate);
+
+        // Verify with BC's PublicKeyFactory + Asn1VerifierFactory using the
+        // ISSUER's alt public key
+        var altPublicKey = PublicKeyFactory.CreateKey(issuerAltSpki);
+        var verifierFactory = new Asn1VerifierFactory(altAlg.Algorithm.Id, altPublicKey);
+        var calc = verifierFactory.CreateCalculator();
+        using (var s = calc.Stream)
+        {
+            s.Write(preTbsDer, 0, preTbsDer.Length);
+        }
+        return calc.GetResult().IsVerified(altSigBits.GetBytes());
+    }
+
+    /// <summary>
+    /// Walks the cert's TBS extensions, drops altSignatureValue, re-encodes.
+    /// Order-preserving: the resulting byte sequence must match exactly what
+    /// the issuer's alt key originally signed (Task 6.3 step 2).
+    /// </summary>
+    private static byte[] ReconstructPreTbsForAltSig(TbsCertificateStructure tbs)
+    {
+        var origExts = tbs.Extensions;
+        var newOrder = new List<DerObjectIdentifier>();
+        var newDict = new Dictionary<DerObjectIdentifier, X509Extension>();
+        // ExtensionOids returns OIDs in TBS-encoded order in BC 2.6.x; we rely on this for byte-identical re-encoding
+        foreach (DerObjectIdentifier oid in origExts.ExtensionOids)
+        {
+            if (oid.Equals(HybridExtensions.AltSignatureValueOid)) continue;
+            newOrder.Add(oid);
+            newDict[oid] = origExts.GetExtension(oid);
+        }
+        var newExts = new X509Extensions(newOrder, newDict);
+
+        var tbsGen = new V3TbsCertificateGenerator();
+        tbsGen.SetSerialNumber(tbs.SerialNumber);
+        tbsGen.SetIssuer(tbs.Issuer);
+        tbsGen.SetSubject(tbs.Subject);
+        tbsGen.SetStartDate(tbs.StartDate);
+        tbsGen.SetEndDate(tbs.EndDate);
+        // tbs.Signature is part of the signed bytes; passing it through is intentional
+        tbsGen.SetSignature(tbs.Signature);
+        tbsGen.SetSubjectPublicKeyInfo(tbs.SubjectPublicKeyInfo);
+        tbsGen.SetExtensions(newExts);
+        return tbsGen.GenerateTbsCertificate().GetDerEncoded();
+    }
+}
