@@ -54,10 +54,8 @@ public class Common
 
     public static byte[] GetRandomByteArray(int size)
     {
-        Random rnd = new();
         byte[] b = new byte[size];
-        rnd.NextBytes(b);
-        Debug.WriteLine("[DEBUG] BYTE ARRAY = " + b);
+        System.Security.Cryptography.RandomNumberGenerator.Fill(b);
         return b;
     }
 }
