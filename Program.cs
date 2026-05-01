@@ -16,6 +16,8 @@ class Program
         root.Add(MiscCommands.BuildVersionCommand());
         root.Add(MiscCommands.BuildTestPfxCommand());
         root.Add(MiscCommands.BuildExportCommand());
+        root.Add(MiscCommands.BuildSshCommand());
+        root.Add(MiscCommands.BuildGpgCommand());
         return root.Parse(args).Invoke();
     }
 }

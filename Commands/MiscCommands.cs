@@ -57,4 +57,52 @@ public static class MiscCommands
         });
         return cmd;
     }
+
+    public static Command BuildSshCommand()
+    {
+        var keyArg = new Argument<string>("keyName") { Description = "Name for the output key files." };
+        var commentArg = new Argument<string>("comment") { Description = "Comment embedded in the public key." };
+        var dirArg = new Argument<string>("exportDirectory") { Description = "Directory where keys will be written." };
+
+        var cmd = new Command("ssh", "Generate a 4096-bit RSA SSH keypair.");
+        cmd.Add(keyArg);
+        cmd.Add(commentArg);
+        cmd.Add(dirArg);
+        cmd.SetAction(parseResult =>
+        {
+            var keyName = parseResult.GetValue(keyArg)!;
+            var comment = parseResult.GetValue(commentArg)!;
+            var dir = parseResult.GetValue(dirArg)!;
+            Common.EnsureDirectoryExists(dir);
+            Cryptography.generateSshKeyPair(keyName, comment, dir);
+        });
+        return cmd;
+    }
+
+    public static Command BuildGpgCommand()
+    {
+        var keyArg = new Argument<string>("keyName") { Description = "Name for the output key files." };
+        var userArg = new Argument<string>("userName") { Description = "Real name for the GPG User ID." };
+        var emailArg = new Argument<string>("email") { Description = "Email for the GPG User ID." };
+        var passArg = new Argument<string>("passphrase") { Description = "Passphrase to protect the private key." };
+        var dirArg = new Argument<string>("exportDirectory") { Description = "Directory where keys will be written." };
+
+        var cmd = new Command("gpg", "Generate a 4096-bit RSA GPG keypair for commit signing.");
+        cmd.Add(keyArg);
+        cmd.Add(userArg);
+        cmd.Add(emailArg);
+        cmd.Add(passArg);
+        cmd.Add(dirArg);
+        cmd.SetAction(parseResult =>
+        {
+            var keyName = parseResult.GetValue(keyArg)!;
+            var user = parseResult.GetValue(userArg)!;
+            var email = parseResult.GetValue(emailArg)!;
+            var passphrase = parseResult.GetValue(passArg)!;
+            var dir = parseResult.GetValue(dirArg)!;
+            Common.EnsureDirectoryExists(dir);
+            Cryptography.generateGpgKeyPair(keyName, user, email, passphrase, dir);
+        });
+        return cmd;
+    }
 }
