@@ -13,11 +13,23 @@ class Program
     static int Main(string[] args)
     {
         var root = new RootCommand("Soverance Studios - Certifactory certificate generation utility.");
-        root.Add(MiscCommands.BuildVersionCommand());
+        root.Add(CaCommand.Build());
+        root.Add(ServerCommand.Build());
+        root.Add(SmimeCommand.Build());
         root.Add(MiscCommands.BuildTestPfxCommand());
         root.Add(MiscCommands.BuildExportCommand());
         root.Add(MiscCommands.BuildSshCommand());
         root.Add(MiscCommands.BuildGpgCommand());
-        return root.Parse(args).Invoke();
+        root.Add(MiscCommands.BuildVersionCommand());
+
+        try
+        {
+            return root.Parse(args).Invoke();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine("Error: " + ex.Message);
+            return 1;
+        }
     }
 }
