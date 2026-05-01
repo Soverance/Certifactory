@@ -16,30 +16,40 @@ public static class CaCommand
         var passArg = new Argument<string>("certificatePassword") { Description = "Password to secure the PFX." };
         var dirArg = new Argument<string>("exportDirectory") { Description = "Directory where the PFX will be written." };
 
+        var algoOpt = new Option<string>("--algorithm")
+        {
+            Description = $"Signing algorithm. Supported: {string.Join(", ", Pq.SignerFactory.SupportedAlgorithms)}. Default: {Pq.KnownAlgorithms.Rsa4096}.",
+            DefaultValueFactory = _ => Pq.KnownAlgorithms.Rsa4096,
+        };
+
         var cmd = new Command("ca", "Generate a self-signed root CA certificate.");
         cmd.Add(nameArg);
         cmd.Add(passArg);
         cmd.Add(dirArg);
+        cmd.Add(algoOpt);
+
         cmd.SetAction(parseResult =>
         {
             var name = parseResult.GetValue(nameArg)!;
             var pwd = parseResult.GetValue(passArg)!;
             var dir = parseResult.GetValue(dirArg)!;
+            var algo = parseResult.GetValue(algoOpt)!;
 
             Common.EnsureDirectoryExists(dir);
 
-            var signer = Pq.SignerFactory.Create(Pq.KnownAlgorithms.Rsa4096);
+            var signer = Pq.SignerFactory.Create(algo);
             signer.GenerateKeyPair();
-            var cert = Pq.CertificateBuilder.BuildCertificate(new Pq.CertificateSpec(
+            var (cert, pfxBytes) = Pq.CertificateBuilder.BuildCertificateWithPfx(new Pq.CertificateSpec(
                 Pq.CertificatePurpose.RootCa, name, pwd, signer,
                 ServerIp: null, EmailAddress: null, Issuer: null));
 
+            Console.WriteLine($"Algorithm = {algo}");
             Console.WriteLine("Certificate Thumbprint = " + cert.Thumbprint);
-            byte[] data = cert.Export(X509ContentType.Pfx, pwd);
             string path = Path.Combine(dir, name + ".pfx");
-            File.WriteAllBytes(path, data);
+            File.WriteAllBytes(path, pfxBytes);
             Console.WriteLine("Certificate exported to " + path);
         });
+
         return cmd;
     }
 }

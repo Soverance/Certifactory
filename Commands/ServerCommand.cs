@@ -12,12 +12,18 @@ public static class ServerCommand
 {
     public static Command Build()
     {
-        var nameArg = new Argument<string>("certificateName") { Description = "CN for the server certificate." };
+        var nameArg = new Argument<string>("certificateName") { Description = "CN / DNS name for the server." };
         var passArg = new Argument<string>("certificatePassword") { Description = "Password to secure the PFX." };
         var ipArg = new Argument<string>("serverIP") { Description = "Server IP address for SAN (may be empty)." };
-        var caArg = new Argument<string>("rootCA") { Description = "Path to the root CA PFX file." };
+        var caArg = new Argument<string>("rootCA") { Description = "Absolute path to the root CA PFX." };
         var caPassArg = new Argument<string>("rootCAPassword") { Description = "Password for the root CA PFX." };
         var dirArg = new Argument<string>("exportDirectory") { Description = "Directory where the PFX will be written." };
+
+        var algoOpt = new Option<string>("--algorithm")
+        {
+            Description = $"Signing algorithm for the leaf cert. Supported: {string.Join(", ", Pq.SignerFactory.SupportedAlgorithms)}. Default: {Pq.KnownAlgorithms.Rsa4096}. (CA's algorithm is detected from the loaded PFX.)",
+            DefaultValueFactory = _ => Pq.KnownAlgorithms.Rsa4096,
+        };
 
         var cmd = new Command("server", "Generate a server certificate signed by a root CA.");
         cmd.Add(nameArg);
@@ -26,6 +32,8 @@ public static class ServerCommand
         cmd.Add(caArg);
         cmd.Add(caPassArg);
         cmd.Add(dirArg);
+        cmd.Add(algoOpt);
+
         cmd.SetAction(parseResult =>
         {
             var name = parseResult.GetValue(nameArg)!;
@@ -34,29 +42,30 @@ public static class ServerCommand
             var ca = parseResult.GetValue(caArg)!;
             var caPwd = parseResult.GetValue(caPassArg)!;
             var dir = parseResult.GetValue(dirArg)!;
+            var algo = parseResult.GetValue(algoOpt)!;
 
             Common.EnsureDirectoryExists(dir);
 
             var caCert = new X509Certificate2(ca, caPwd,
                 X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.Exportable);
-            // TODO(Task 4.4): detect CA algorithm from caCert rather than assuming RSA-4096.
-            var caSigner = Pq.SignerFactory.Create(Pq.KnownAlgorithms.Rsa4096);
-            caSigner.LoadKeyPair(Pq.PfxExporter.ExtractKeyPair(caCert));
+            var caSigner = Pq.SignerFactory.CreateForCertificate(caCert);
+            caSigner.LoadKeyPair(Pq.PfxExporter.ExtractKeyPair(ca, caPwd));
 
-            var leafSigner = Pq.SignerFactory.Create(Pq.KnownAlgorithms.Rsa4096);
+            var leafSigner = Pq.SignerFactory.Create(algo);
             leafSigner.GenerateKeyPair();
-            var cert = Pq.CertificateBuilder.BuildCertificate(new Pq.CertificateSpec(
+            var (cert, pfxBytes) = Pq.CertificateBuilder.BuildCertificateWithPfx(new Pq.CertificateSpec(
                 Pq.CertificatePurpose.Server, name, pwd, leafSigner,
                 ServerIp: ip,
                 EmailAddress: null,
                 Issuer: new Pq.IssuerInfo(caCert, caSigner)));
 
+            Console.WriteLine($"Algorithm = {algo}");
             Console.WriteLine("Certificate Thumbprint = " + cert.Thumbprint);
-            byte[] data = cert.Export(X509ContentType.Pfx, pwd);
             string path = Path.Combine(dir, name + ".pfx");
-            File.WriteAllBytes(path, data);
+            File.WriteAllBytes(path, pfxBytes);
             Console.WriteLine("Certificate exported to " + path);
         });
+
         return cmd;
     }
 }

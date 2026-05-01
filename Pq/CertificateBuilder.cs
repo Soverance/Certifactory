@@ -34,12 +34,40 @@ public static class CertificateBuilder
     private static readonly SecureRandom Random = new();
 
     /// <summary>
-    /// Builds an X.509 certificate per <paramref name="spec"/>.
-    /// Caller must initialize spec.Signer (call GenerateKeyPair or LoadKeyPair)
-    /// before calling. For leaf certs (Issuer != null), the issuer signer must
-    /// also be initialized with the CA's loaded private key.
+    /// Builds an X.509 certificate per <paramref name="spec"/>. Returns the
+    /// .NET <see cref="X509Certificate2"/> for inspection (subject, extensions,
+    /// thumbprint, etc.) — used primarily by tests.
+    ///
+    /// <para>
+    /// <b>Do NOT call <see cref="X509Certificate2.Export(X509ContentType, string)"/>
+    /// on the result with <see cref="X509ContentType.Pfx"/></b> — for ML-DSA / SLH-DSA
+    /// certs, the .NET cert layer cannot re-serialize the private key and throws
+    /// <see cref="System.Security.Cryptography.CryptographicException"/>. CLI code
+    /// that needs to write the PFX to disk must use <see cref="BuildCertificateWithPfx"/>
+    /// instead, which exposes the BC-produced bytes directly.
+    /// </para>
     /// </summary>
     public static X509Certificate2 BuildCertificate(CertificateSpec spec)
+    {
+        var (cert, _) = BuildCertificateAndPfxInternal(spec);
+        return cert;
+    }
+
+    /// <summary>
+    /// Builds an X.509 certificate per <paramref name="spec"/> and returns
+    /// both the loaded <see cref="X509Certificate2"/> (for inspection — e.g.
+    /// thumbprint) and the BC-produced PFX bytes (for direct write to disk).
+    /// CLI handlers must use this overload instead of calling
+    /// <see cref="X509Certificate2.Export(X509ContentType, string)"/> on the
+    /// returned cert, because .NET's StorePal cannot re-serialize ML-DSA /
+    /// SLH-DSA private keys.
+    /// </summary>
+    public static (X509Certificate2 Certificate, byte[] PfxBytes) BuildCertificateWithPfx(CertificateSpec spec)
+    {
+        return BuildCertificateAndPfxInternal(spec);
+    }
+
+    private static (X509Certificate2 Certificate, byte[] PfxBytes) BuildCertificateAndPfxInternal(CertificateSpec spec)
     {
         ValidateSpec(spec);
 
@@ -62,8 +90,11 @@ public static class CertificateBuilder
 
         Org.BouncyCastle.X509.X509Certificate bcCert = gen.Generate(sigFactory);
 
-        return PfxExporter.ToX509Certificate2(
+        byte[] pfxBytes = PfxExporter.ToPfxBytes(
             bcCert, spec.Signer.KeyPair.Private, spec.CommonName, spec.Password);
+        var cert = new X509Certificate2(pfxBytes, spec.Password,
+            X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.Exportable);
+        return (cert, pfxBytes);
     }
 
     private static X509Name BuildSubject(CertificateSpec spec) => spec.Purpose switch
