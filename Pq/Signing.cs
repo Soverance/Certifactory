@@ -6,6 +6,9 @@
 namespace Soverance.Certifactory.Pq;
 
 using System.Collections.Immutable;
+using System.Linq;
+using Org.BouncyCastle.Asn1;
+using Org.BouncyCastle.Asn1.X509;
 using Org.BouncyCastle.Crypto;
 using Org.BouncyCastle.Crypto.Generators;
 using Org.BouncyCastle.Crypto.Operators;
@@ -230,27 +233,54 @@ public static class SignerFactory
     public static ImmutableArray<string> SupportedAlgorithms => _supported;
 
     /// <summary>
-    /// Inspects the signature algorithm OID on a loaded cert and returns
-    /// a fresh signer of the matching algorithm. Used when issuing leaf
-    /// certs so the leaf is signed by the same algorithm as the CA.
+    /// Inspects a loaded cert and returns a fresh signer of the matching algorithm.
+    /// Used when issuing leaf certs so the leaf is signed by the same algorithm as the CA.
     ///
-    /// Hybrid certs are NOT detected here — their primary signature OID
-    /// is just sha256WithRSAEncryption (looks like a plain RSA cert).
-    /// Hybrid detection requires inspecting the subjectAltPublicKeyInfo
-    /// extension and is handled separately (see Task 6.8).
+    /// Hybrid certs are detected by the presence of the subjectAltPublicKeyInfo
+    /// extension (OID 2.5.29.72). For hybrid, returns a HybridSigner composing
+    /// the primary algorithm (from the cert's signature OID) and the alt algorithm
+    /// (read from the altSignatureAlgorithm extension).
     /// </summary>
     public static IPqSigner CreateForCertificate(
         System.Security.Cryptography.X509Certificates.X509Certificate2 cert)
     {
         ArgumentNullException.ThrowIfNull(cert);
-        string? oid = cert.SignatureAlgorithm.Value;
-        return oid switch
+
+        bool isHybrid = cert.Extensions.Any(
+            e => e.Oid?.Value == HybridExtensions.SubjectAltPublicKeyInfoOid.Id);
+
+        if (isHybrid)
         {
-            "1.2.840.113549.1.1.11" => new RsaSigner(),       // sha256WithRSAEncryption
-            "2.16.840.1.101.3.4.3.18" => new MlDsaSigner(),   // id-ml-dsa-65
-            "2.16.840.1.101.3.4.3.24" => new SlhDsaSigner(),  // id-slh-dsa-sha2-256s (FIPS 205, per NIST CSOR)
-            _ => throw new NotSupportedException(
-                $"Cannot determine signer for CA with signature algorithm OID '{oid ?? "<null>"}'.")
-        };
+            var primary = CreateByOid(cert.SignatureAlgorithm.Value!);
+
+            var altAlgExt = cert.Extensions.First(
+                e => e.Oid?.Value == HybridExtensions.AltSignatureAlgorithmOid.Id);
+            var altAlgOid = ReadAlgorithmIdentifierOid(altAlgExt.RawData);
+            var alt = CreateByOid(altAlgOid);
+
+            return new HybridSigner(primary, alt);
+        }
+
+        return CreateByOid(cert.SignatureAlgorithm.Value!);
+    }
+
+    private static IPqSigner CreateByOid(string oid) => oid switch
+    {
+        "1.2.840.113549.1.1.11" => new RsaSigner(),         // sha256WithRSAEncryption
+        "2.16.840.1.101.3.4.3.18" => new MlDsaSigner(),     // id-ml-dsa-65
+        "2.16.840.1.101.3.4.3.24" => new SlhDsaSigner(),    // id-slh-dsa-sha2-256s (NOT .20 — that's 128s)
+        _ => throw new NotSupportedException($"Unknown algorithm OID: '{oid}'.")
+    };
+
+    private static string ReadAlgorithmIdentifierOid(byte[] extensionRawValue)
+    {
+        // .NET's X509Extension.RawData returns the inner content (the
+        // AlgorithmIdentifier SEQUENCE) directly, no OCTET STRING wrap.
+        // Contrast with BC's bcCert.GetExtensionValue(oid), which returns
+        // the wrapping Asn1OctetString and requires .GetOctets() to unwrap
+        // (see HybridVerifier.VerifyAltSignature for the BC-side parsing).
+        var asn1 = Asn1Object.FromByteArray(extensionRawValue);
+        var algId = AlgorithmIdentifier.GetInstance(asn1);
+        return algId.Algorithm.Id;
     }
 }

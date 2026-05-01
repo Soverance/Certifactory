@@ -48,8 +48,7 @@ public static class ServerCommand
 
             var caCert = new X509Certificate2(ca, caPwd,
                 X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.Exportable);
-            var caSigner = Pq.SignerFactory.CreateForCertificate(caCert);
-            caSigner.LoadKeyPair(Pq.PfxExporter.ExtractKeyPair(ca, caPwd));
+            var caSigner = Common.LoadCaSigner(caCert, ca, caPwd);
 
             var leafSigner = Pq.SignerFactory.Create(algo);
             leafSigner.GenerateKeyPair();

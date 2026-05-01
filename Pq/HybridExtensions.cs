@@ -271,6 +271,10 @@ public static class HybridVerifier
                 "Issuer is likely not a hybrid CA.");
         }
 
+        // BC's bcCert.GetExtensionValue(oid) returns the wrapping Asn1OctetString
+        // and requires .GetOctets() to unwrap. Contrast with .NET's
+        // X509Extension.RawData which returns the inner content directly
+        // (see SignerFactory.ReadAlgorithmIdentifierOid for that path).
         var altAlg = AlgorithmIdentifier.GetInstance(
             Asn1Object.FromByteArray(algIdBytes!.GetOctets()));
         var altSigBits = DerBitString.GetInstance(

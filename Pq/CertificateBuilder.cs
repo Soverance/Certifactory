@@ -76,15 +76,24 @@ public static class CertificateBuilder
                 ? BuildHybrid(spec, h)
                 : BuildSinglePass(spec);
 
-        // For hybrid, the PFX stores only the PRIMARY private key — the cert's
-        // SPKI carries the primary public key, so the matching private is the
-        // primary's. The ALT private key persistence is Task 6.7's scope.
-        AsymmetricKeyParameter keyForPfx = spec.Signer is HybridSigner hs
-            ? hs.PrimarySigner.KeyPair.Private
-            : spec.Signer.KeyPair.Private;
+        // For hybrid certs, persist BOTH the primary private key (matches the cert's
+        // SPKI) AND the alt private key (under a "-alt" alias). Without persisting
+        // the alt key, a reloaded hybrid CA could not sign more hybrid leaves.
+        AsymmetricKeyParameter primaryKey;
+        AsymmetricKeyParameter? altKey;
+        if (spec.Signer is HybridSigner hs)
+        {
+            primaryKey = hs.PrimarySigner.KeyPair.Private;
+            altKey = hs.AltSigner.KeyPair.Private;
+        }
+        else
+        {
+            primaryKey = spec.Signer.KeyPair.Private;
+            altKey = null;
+        }
 
         byte[] pfxBytes = PfxExporter.ToPfxBytes(
-            bcCert, keyForPfx, spec.CommonName, spec.Password);
+            bcCert, primaryKey, spec.CommonName, spec.Password, altKey);
         var cert = new X509Certificate2(pfxBytes, spec.Password,
             X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.Exportable);
         return (cert, pfxBytes);

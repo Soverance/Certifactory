@@ -394,4 +394,83 @@ public class CertificateBuilderTests
         var bcLeaf = Org.BouncyCastle.Security.DotNetUtilities.FromX509Certificate(leaf);
         bcLeaf.Verify(bcCaCert.GetPublicKey()); // throws on bad sig
     }
+
+    [Fact]
+    public void Hybrid_cert_PFX_contains_both_primary_and_alt_keys()
+    {
+        // Build a hybrid CA via the production CertificateBuilder path
+        var signer = SignerFactory.Create(KnownAlgorithms.Hybrid);
+        signer.GenerateKeyPair();
+        var (_, pfxBytes) = CertificateBuilder.BuildCertificateWithPfx(new CertificateSpec(
+            CertificatePurpose.RootCa, "hybrid-pfx-test-ca", "Pass", signer,
+            ServerIp: null, EmailAddress: null, Issuer: null));
+
+        // Re-load via BC's PKCS#12 parser to inspect key entries
+        var store = new Org.BouncyCastle.Pkcs.Pkcs12StoreBuilder().Build();
+        using var ms = new MemoryStream(pfxBytes);
+        store.Load(ms, "Pass".ToCharArray());
+
+        // Both the primary (under the cert's CN) and the alt (under "<CN>-alt")
+        // key entries should be present. Note: this test verifies persistence
+        // only — Task 6.8 will verify the alt key actually matches the cert's
+        // subjectAltPublicKeyInfo extension on reload.
+        store.ContainsAlias("hybrid-pfx-test-ca").Should().BeTrue("primary key alias missing");
+        store.ContainsAlias("hybrid-pfx-test-ca-alt").Should().BeTrue("alt key alias missing");
+        store.IsKeyEntry("hybrid-pfx-test-ca").Should().BeTrue();
+        store.IsKeyEntry("hybrid-pfx-test-ca-alt").Should().BeTrue();
+    }
+
+    [Fact]
+    public void Hybrid_CA_roundtrips_through_PFX_and_can_issue_hybrid_leaves()
+    {
+        // Build a hybrid CA, persist to disk via the production path, reload from
+        // disk, detect that it's hybrid, extract both private keys, then use the
+        // reloaded CA to issue a hybrid leaf and verify the leaf's alt sig.
+        var caSigner = SignerFactory.Create(KnownAlgorithms.Hybrid);
+        caSigner.GenerateKeyPair();
+        var (_, pfxBytes) = CertificateBuilder.BuildCertificateWithPfx(new CertificateSpec(
+            CertificatePurpose.RootCa, "hybrid-roundtrip-ca", "Pass", caSigner,
+            ServerIp: null, EmailAddress: null, Issuer: null));
+
+        var tempPath = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllBytes(tempPath, pfxBytes);
+
+            // Reload as the CLI would
+            using var reloaded = new X509Certificate2(tempPath, "Pass",
+                X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.Exportable);
+
+            // Detect: should resolve to a HybridSigner via the alt-extension check
+            var detectedSigner = SignerFactory.CreateForCertificate(reloaded);
+            detectedSigner.Should().BeOfType<HybridSigner>("hybrid CAs should be detected via subjectAltPublicKeyInfo extension");
+
+            // Load both private keys via ExtractHybridKeyPairs
+            var hybridDetected = (HybridSigner)detectedSigner;
+            var (primaryKp, altKp) = PfxExporter.ExtractHybridKeyPairs(tempPath, "Pass");
+            altKp.Should().NotBeNull("hybrid CA PFX must contain alt private key");
+            hybridDetected.PrimarySigner.LoadKeyPair(primaryKp);
+            hybridDetected.AltSigner.LoadKeyPair(altKp!);
+
+            // Issue a hybrid leaf from the reloaded CA
+            var leafSigner = SignerFactory.Create(KnownAlgorithms.Hybrid);
+            leafSigner.GenerateKeyPair();
+            var leaf = CertificateBuilder.BuildCertificate(new CertificateSpec(
+                CertificatePurpose.Server, "hybrid-leaf.example.com", "Pass", leafSigner,
+                ServerIp: "10.0.0.7",
+                EmailAddress: null,
+                Issuer: new IssuerInfo(reloaded, hybridDetected)));
+
+            leaf.Issuer.Should().Be("CN=hybrid-roundtrip-ca");
+
+            // Use the 2-arg verify (leaf is not self-signed; alt sig was produced
+            // by the reloaded CA's alt private key)
+            HybridVerifier.VerifyAltSignature(leaf, reloaded).Should().BeTrue(
+                "leaf alt sig must verify against reloaded CA's alt pubkey — proves both keys round-tripped correctly");
+        }
+        finally
+        {
+            File.Delete(tempPath);
+        }
+    }
 }
