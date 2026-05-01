@@ -36,4 +36,19 @@ public static class PfxExporter
         return new X509Certificate2(ms.ToArray(), password,
             X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.Exportable);
     }
+
+    /// <summary>
+    /// Extracts a BouncyCastle keypair from a loaded .NET cert for use as
+    /// an issuer signer when issuing leaf certs. RSA-only at this stage —
+    /// Task 4.5 generalizes to handle PQ keys.
+    /// </summary>
+    public static AsymmetricCipherKeyPair ExtractKeyPair(X509Certificate2 cert)
+    {
+        // GetRsaKeyPair materializes the parameters into BC BigIntegers, so
+        // disposing the underlying RSA instance after the call is safe.
+        using var rsa = cert.GetRSAPrivateKey()
+            ?? throw new InvalidOperationException(
+                "CA certificate has no RSA private key.");
+        return DotNetUtilities.GetRsaKeyPair(rsa);
+    }
 }

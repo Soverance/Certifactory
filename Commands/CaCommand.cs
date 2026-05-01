@@ -25,8 +25,15 @@ public static class CaCommand
             var name = parseResult.GetValue(nameArg)!;
             var pwd = parseResult.GetValue(passArg)!;
             var dir = parseResult.GetValue(dirArg)!;
+
             Common.EnsureDirectoryExists(dir);
-            X509Certificate2 cert = Cryptography.buildRootCACertificate(name, pwd);
+
+            var signer = Pq.SignerFactory.Create(Pq.KnownAlgorithms.Rsa4096);
+            signer.GenerateKeyPair();
+            var cert = Pq.CertificateBuilder.BuildCertificate(new Pq.CertificateSpec(
+                Pq.CertificatePurpose.RootCa, name, pwd, signer,
+                ServerIp: null, EmailAddress: null, Issuer: null));
+
             Console.WriteLine("Certificate Thumbprint = " + cert.Thumbprint);
             byte[] data = cert.Export(X509ContentType.Pfx, pwd);
             string path = Path.Combine(dir, name + ".pfx");

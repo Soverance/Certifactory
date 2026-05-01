@@ -34,8 +34,23 @@ public static class ServerCommand
             var ca = parseResult.GetValue(caArg)!;
             var caPwd = parseResult.GetValue(caPassArg)!;
             var dir = parseResult.GetValue(dirArg)!;
+
             Common.EnsureDirectoryExists(dir);
-            X509Certificate2 cert = Cryptography.buildSelfSignedServerCertificate(name, pwd, ip, ca, caPwd);
+
+            var caCert = new X509Certificate2(ca, caPwd,
+                X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.Exportable);
+            // TODO(Task 4.4): detect CA algorithm from caCert rather than assuming RSA-4096.
+            var caSigner = Pq.SignerFactory.Create(Pq.KnownAlgorithms.Rsa4096);
+            caSigner.LoadKeyPair(Pq.PfxExporter.ExtractKeyPair(caCert));
+
+            var leafSigner = Pq.SignerFactory.Create(Pq.KnownAlgorithms.Rsa4096);
+            leafSigner.GenerateKeyPair();
+            var cert = Pq.CertificateBuilder.BuildCertificate(new Pq.CertificateSpec(
+                Pq.CertificatePurpose.Server, name, pwd, leafSigner,
+                ServerIp: ip,
+                EmailAddress: null,
+                Issuer: new Pq.IssuerInfo(caCert, caSigner)));
+
             Console.WriteLine("Certificate Thumbprint = " + cert.Thumbprint);
             byte[] data = cert.Export(X509ContentType.Pfx, pwd);
             string path = Path.Combine(dir, name + ".pfx");
