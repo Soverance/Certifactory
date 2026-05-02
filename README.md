@@ -10,13 +10,28 @@ You can then use this utility to export the PFX bundle into decrypted PEM encode
 
 All commands that accept an `exportDirectory` parameter will automatically create the directory if it does not exist.
 
+# Algorithm options
+
+The `ca`, `server`, and `smime` commands accept an `--algorithm` flag that selects the signing algorithm for the generated certificate:
+
+| Value | Description | When to use |
+|---|---|---|
+| `rsa-4096` (default) | Classical RSA-4096 with SHA-256 | Maximum compatibility — every existing client trusts it |
+| `ml-dsa-65` | FIPS 204 ML-DSA-65 (post-quantum lattice signatures) | Internal-only deployments where you control all clients and want pure PQC |
+| `slh-dsa-256s` | FIPS 205 SLH-DSA-SHA2-256s (hash-based) | Long-lived offline root CAs where signature size doesn't matter and conservative security assumptions are paramount |
+| `hybrid` | RSA-4096 primary + ML-DSA-65 alt-signature (X.509:2019 alt-sig extensions) | Production deployments — legacy clients see classical RSA, PQ-aware clients can validate the alt chain |
+
+**Hybrid certificates** use non-critical X.509 extensions (`subjectAltPublicKeyInfo` 2.5.29.72, `altSignatureAlgorithm` 2.5.29.73, `altSignatureValue` 2.5.29.74) to embed a second signature alongside the classical one. Verifiers that don't understand these extensions ignore them and validate the cert as a normal RSA chain. Verifiers that do understand them can additionally validate the post-quantum alt chain.
+
+When issuing a leaf cert (`server` or `smime`), the leaf's algorithm is determined by `--algorithm`. The CA's algorithm is auto-detected from the loaded CA PFX — pass a hybrid CA and the leaf will be signed with hybrid two-pass TBS construction.
+
 # Commands
 
 <details>
 <summary><strong>ca</strong> — Generate Root CA Certificate</summary>
 
 ```
-certifactory ca <certificateName> <certificatePassword> <exportDirectory>
+certifactory ca <certificateName> <certificatePassword> <exportDirectory> [--algorithm <name>]
 ```
 
 | Parameter | Description |
@@ -24,6 +39,7 @@ certifactory ca <certificateName> <certificatePassword> <exportDirectory>
 | `certificateName` | The certificate name for the root CA, i.e. `"encryption.soverance.com"`. |
 | `certificatePassword` | The password used to secure the resulting PFX bundle. |
 | `exportDirectory` | The directory where the resulting PFX file will be exported. |
+| `--algorithm` | (Optional) Signing algorithm: `rsa-4096` (default), `ml-dsa-65`, `slh-dsa-256s`, `hybrid`. See [Algorithm options](#algorithm-options). |
 
 On Windows, install in the **Trusted Root Certification Authority** certificate store.
 
@@ -35,7 +51,7 @@ On Windows, install in the **Trusted Root Certification Authority** certificate 
 <summary><strong>server</strong> — Generate Server Certificate</summary>
 
 ```
-certifactory server <certificateName> <certificatePassword> <serverIP> <rootCA> <rootCAPassword> <exportDirectory>
+certifactory server <certificateName> <certificatePassword> <serverIP> <rootCA> <rootCAPassword> <exportDirectory> [--algorithm <name>]
 ```
 
 | Parameter | Description |
@@ -46,6 +62,7 @@ certifactory server <certificateName> <certificatePassword> <serverIP> <rootCA> 
 | `rootCA` | The absolute path of the root CA PFX that will sign this certificate. |
 | `rootCAPassword` | The password used to secure the Root CA PFX file. |
 | `exportDirectory` | The directory where the resulting PFX file will be exported. |
+| `--algorithm` | (Optional) Signing algorithm for the leaf cert: `rsa-4096` (default), `ml-dsa-65`, `slh-dsa-256s`, `hybrid`. The CA's algorithm is auto-detected from the loaded PFX. See [Algorithm options](#algorithm-options). |
 
 [Full documentation](docs/server.md)
 
@@ -55,7 +72,7 @@ certifactory server <certificateName> <certificatePassword> <serverIP> <rootCA> 
 <summary><strong>smime</strong> — Generate S/MIME Certificate</summary>
 
 ```
-certifactory smime <certificateName> <certificatePassword> <userEmail> <rootCA> <rootCAPassword> <exportDirectory>
+certifactory smime <certificateName> <certificatePassword> <userEmail> <rootCA> <rootCAPassword> <exportDirectory> [--algorithm <name>]
 ```
 
 | Parameter | Description |
@@ -66,6 +83,7 @@ certifactory smime <certificateName> <certificatePassword> <userEmail> <rootCA> 
 | `rootCA` | The absolute path of the root CA PFX that will sign this certificate. |
 | `rootCAPassword` | The password used to secure the Root CA PFX file. |
 | `exportDirectory` | The directory where the resulting PFX file will be exported. |
+| `--algorithm` | (Optional) Signing algorithm for the leaf cert: `rsa-4096` (default), `ml-dsa-65`, `slh-dsa-256s`, `hybrid`. The CA's algorithm is auto-detected from the loaded PFX. See [Algorithm options](#algorithm-options). |
 
 On Windows, install in the **Trusted People** and user's **Personal** certificate stores.
 
