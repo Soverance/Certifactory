@@ -11,6 +11,8 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography.X509Certificates;
+using Soverance.Certifactory.Pq;
 
 public class Common
 {
@@ -54,10 +56,37 @@ public class Common
 
     public static byte[] GetRandomByteArray(int size)
     {
-        Random rnd = new();
         byte[] b = new byte[size];
-        rnd.NextBytes(b);
-        Debug.WriteLine("[DEBUG] BYTE ARRAY = " + b);
+        System.Security.Cryptography.RandomNumberGenerator.Fill(b);
         return b;
+    }
+
+    /// <summary>
+    /// Loads a CA certificate's signer from disk, populating the keypair(s)
+    /// from the PFX. Detects hybrid CAs via the subjectAltPublicKeyInfo
+    /// extension and loads BOTH the primary and alt private keys; for
+    /// non-hybrid CAs, loads just the primary. Used by leaf-issuing CLI
+    /// commands (server, smime).
+    /// </summary>
+    public static IPqSigner LoadCaSigner(X509Certificate2 caCert, string caPath, string caPassword)
+    {
+        var caSigner = SignerFactory.CreateForCertificate(caCert);
+        if (caSigner is HybridSigner caHybrid)
+        {
+            var (primaryKp, altKp) = PfxExporter.ExtractHybridKeyPairs(caPath, caPassword);
+            if (altKp is null)
+            {
+                throw new InvalidOperationException(
+                    "Hybrid CA PFX is missing its alt private key. " +
+                    "Was it generated with a pre-hybrid version of Certifactory?");
+            }
+            caHybrid.PrimarySigner.LoadKeyPair(primaryKp);
+            caHybrid.AltSigner.LoadKeyPair(altKp);
+        }
+        else
+        {
+            caSigner.LoadKeyPair(PfxExporter.ExtractKeyPair(caPath, caPassword));
+        }
+        return caSigner;
     }
 }
