@@ -21,6 +21,7 @@ class Program
         root.Add(MiscCommands.BuildSshCommand());
         root.Add(MiscCommands.BuildGpgCommand());
         root.Add(MiscCommands.BuildVersionCommand());
+        root.Add(ScanCommand.Build());
 
         try
         {

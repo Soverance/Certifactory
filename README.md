@@ -129,6 +129,29 @@ Exports `.cer`, `.crt.pem`, and `.key.pem` files for use on Linux systems.
 </details>
 
 <details>
+<summary><strong>scan</strong> — Inventory Certificates as a CycloneDX 1.6 CBOM</summary>
+
+```
+certifactory scan [paths...] [--output <file>] [--pfx-password-file <file>] [--system-stores] [--summary]
+```
+
+Walks the given files/directories (and, with `--system-stores`, OS certificate stores) and emits a CycloneDX 1.6 (ECMA-424) Cryptographic Bill of Materials (CBOM) describing every certificate, algorithm, and public key found — each classified by post-quantum readiness. Read-only and fully offline; never prompts for or emits private-key material.
+
+| Parameter | Description |
+|---|---|
+| `paths...` | (Optional) One or more files or directories to scan. Recognizes `.pem`, `.crt`, `.cer`, `.der`, `.pfx`, `.p12`; directories are walked recursively. |
+| `--output` | (Optional) Write the CBOM JSON to this file instead of standard output. |
+| `--pfx-password-file` | (Optional) Path to a file holding the password for encrypted PFX/P12 keystores. Without it, encrypted keystores are skipped with a warning (never a prompt). |
+| `--system-stores` | (Optional) Also scan OS certificate stores — the Windows certificate stores (CurrentUser + LocalMachine: Personal, Trusted Root, Intermediate, Trusted People) or, on non-Windows systems, the well-known PEM directories. |
+| `--summary` | (Optional) Print a post-quantum readiness summary table to stderr (stdout stays pure CBOM JSON). |
+
+The emitted CBOM validates against the CycloneDX 1.6 schema and is consumable by any CycloneDX 1.6-aware tool.
+
+[Full documentation](docs/scan.md)
+
+</details>
+
+<details>
 <summary><strong>ssh</strong> — Generate SSH Keypair</summary>
 
 ```
