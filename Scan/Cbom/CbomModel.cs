@@ -52,7 +52,20 @@ public sealed class CryptoProperties
     [JsonPropertyName("algorithmProperties")]           public AlgorithmProperties? AlgorithmProperties { get; set; }
     [JsonPropertyName("certificateProperties")]         public CertificateProperties? CertificateProperties { get; set; }
     [JsonPropertyName("relatedCryptoMaterialProperties")] public RelatedCryptoMaterialProperties? RelatedCryptoMaterialProperties { get; set; }
+    [JsonPropertyName("protocolProperties")]            public ProtocolProperties? ProtocolProperties { get; set; }
     [JsonPropertyName("oid")]                           public string? Oid { get; set; }
+}
+
+public sealed class ProtocolProperties
+{
+    [JsonPropertyName("type")]         public string Type { get; set; } = "tls";
+    [JsonPropertyName("version")]      public string? Version { get; set; }
+    [JsonPropertyName("cipherSuites")] public List<CipherSuite>? CipherSuites { get; set; }
+}
+
+public sealed class CipherSuite
+{
+    [JsonPropertyName("name")] public string Name { get; set; } = "";
 }
 
 public sealed class AlgorithmProperties
