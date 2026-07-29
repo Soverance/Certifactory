@@ -152,6 +152,28 @@ The emitted CBOM validates against the CycloneDX 1.6 schema and is consumable by
 </details>
 
 <details>
+<summary><strong>tls-scan</strong> — Probe TLS Endpoints and Emit a CycloneDX 1.6 CBOM</summary>
+
+```
+certifactory tls-scan [targets...] [--targets-file <file>] [--output <file>] [--summary] [--timeout <seconds>] [--concurrency <n>]
+```
+
+Probes TLS endpoints over the network to inventory negotiated protocol parameters, certificate chains, and key-exchange groups. Emits a CycloneDX 1.6 (ECMA-424) Cryptographic Bill of Materials (CBOM) describing each asset and classifying it by post-quantum readiness. **Authorization required:** You must be authorized to scan the endpoints you specify. The tool makes outbound connections only to the named targets and never modifies the remote server.
+
+| Parameter | Description |
+|---|---|
+| `targets...` | (Optional) TLS endpoints as `host:port` pairs (e.g., `example.com:443`, `api.example.com:8443`). Zero or more may be provided; if none (and no `--targets-file`), the command emits an empty CBOM rather than erroring. |
+| `--targets-file` | (Optional) Path to a file with one `host:port` target per line. Empty lines and lines starting with `#` (comments) are ignored. |
+| `--output` | (Optional) Write the CBOM JSON to this file instead of standard output. |
+| `--summary` | (Optional) Print a post-quantum readiness summary table to stderr (stdout stays pure CBOM JSON). |
+| `--timeout` | (Optional) Per-target handshake timeout in seconds (default 10). |
+| `--concurrency` | (Optional) Maximum concurrent handshakes (default 8). |
+
+[Full documentation](docs/tls-scan.md)
+
+</details>
+
+<details>
 <summary><strong>ssh</strong> — Generate SSH Keypair</summary>
 
 ```

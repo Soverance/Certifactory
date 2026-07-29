@@ -22,6 +22,7 @@ class Program
         root.Add(MiscCommands.BuildGpgCommand());
         root.Add(MiscCommands.BuildVersionCommand());
         root.Add(ScanCommand.Build());
+        root.Add(TlsScanCommand.Build());
 
         try
         {

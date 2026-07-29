@@ -8,7 +8,10 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using FluentAssertions;
 using Json.Schema;
+using Org.BouncyCastle.Security;
+using Soverance.Certifactory.Pq;
 using Soverance.Certifactory.Scan;
+using Soverance.Certifactory.Scan.Tls;
 using Xunit;
 
 namespace Certifactory.Tests.Scan;
@@ -119,5 +122,56 @@ public class CbomSchemaConformanceTests
             relatedCryptoMaterialProperties.TryGetProperty(key, out _).Should().BeTrue(
                 $"relatedCryptoMaterialProperties should contain the exact key '{key}'");
         }
+    }
+
+    [Fact]
+    public void Tls_protocol_cbom_validates_against_cyclonedx_1_6_schema()
+    {
+        var signer = SignerFactory.Create(KnownAlgorithms.Rsa4096);
+        signer.GenerateKeyPair();
+        var cert = CertificateBuilder.BuildCertificate(new CertificateSpec(
+            CertificatePurpose.Server, "schema.example.com", "Pass", signer,
+            ServerIp: "10.0.0.1", EmailAddress: null, Issuer: null));
+        var leaf = DotNetUtilities.FromX509Certificate(cert);
+
+        var endpoint = new TlsEndpointResult(
+            "schema.example.com", 443, Succeeded: true,
+            TlsVersion: "1.3", CipherSuite: "TLS_AES_256_GCM_SHA384",
+            KexGroup: "X25519MLKEM768",
+            Chain: new[] { leaf },
+            FailureReason: null);
+
+        var doc = TlsCbomBuilder.Build(new[] { endpoint }, "H", "2026-07-28T00:00:00Z", "1.0.0");
+        var json = CbomSerializer.Serialize(doc);
+
+        var schema = LoadSchemaAndRegisterRefs();
+        var node = JsonNode.Parse(json);
+        var result = schema.Evaluate(node, new EvaluationOptions { OutputFormat = OutputFormat.List });
+
+        result.IsValid.Should().BeTrue(
+            because: "emitted TLS protocol-asset CBOM must be schema-valid CycloneDX 1.6; errors: " +
+                     JsonSerializer.Serialize(result.Details));
+
+        using var parsed = JsonDocument.Parse(json);
+        var components = parsed.RootElement.GetProperty("components");
+
+        JsonElement? protocolComponent = null;
+        foreach (var component in components.EnumerateArray())
+        {
+            if (!component.TryGetProperty("cryptoProperties", out var cryptoProperties)) continue;
+            if (!cryptoProperties.TryGetProperty("assetType", out var assetType)) continue;
+            if (assetType.GetString() == "protocol") protocolComponent = component;
+        }
+
+        protocolComponent.Should().NotBeNull("the CBOM should contain a protocol component");
+
+        var protocolProperties = protocolComponent!.Value
+            .GetProperty("cryptoProperties")
+            .GetProperty("protocolProperties");
+
+        protocolProperties.GetProperty("type").GetString().Should().Be("tls");
+        protocolProperties.GetProperty("version").GetString().Should().Be("1.3");
+        protocolProperties.GetProperty("cipherSuites")[0].GetProperty("name").GetString()
+            .Should().Be("TLS_AES_256_GCM_SHA384");
     }
 }
