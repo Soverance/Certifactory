@@ -24,6 +24,7 @@ class Program
         root.Add(ScanCommand.Build());
         root.Add(TlsScanCommand.Build());
         root.Add(RiskCommand.Build());
+        root.Add(RemediateCommand.Build());
 
         try
         {

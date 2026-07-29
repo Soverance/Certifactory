@@ -21,7 +21,7 @@ using BcX509 = Org.BouncyCastle.X509.X509Certificate;
 /// </summary>
 public static class CertificateInspector
 {
-    public static DiscoveredCertificate Inspect(BcX509 cert, string sourceDescription)
+    public static DiscoveredCertificate Inspect(BcX509 cert, string sourceDescription, bool? hasPrivateKey)
     {
         var spki = cert.CertificateStructure.SubjectPublicKeyInfo;
         var subjectKeyAlgOid = spki.Algorithm.Algorithm.Id;
@@ -82,6 +82,7 @@ public static class CertificateInspector
             AltKeyAlgorithmOid: altKeyAlgOid,
             SourceDescription: sourceDescription,
             KeyUsages: keyUsages,
-            IsCertificateAuthority: isCa);
+            IsCertificateAuthority: isCa,
+            HasPrivateKey: hasPrivateKey);
     }
 }

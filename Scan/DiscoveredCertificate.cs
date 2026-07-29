@@ -23,4 +23,7 @@ public record DiscoveredCertificate(
     string? AltKeyAlgorithmOid,
     string SourceDescription,
     bool[]? KeyUsages = null,
-    bool IsCertificateAuthority = false);
+    bool IsCertificateAuthority = false,
+    // Custody tri-state: null = undetermined (e.g. observed over the wire, local key
+    // material never inspected), true = owned-key, false = public-only.
+    bool? HasPrivateKey = null);

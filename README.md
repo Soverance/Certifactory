@@ -319,3 +319,21 @@ Whenever no component in the CBOM carries the `certifactory:certificate:role` pr
 - **Any quantum-safe asset**: **0**, always (the gate).
 
 Full command reference (flags, exit codes, examples): [docs/risk.md](docs/risk.md).
+
+# Post-quantum remediation playbook
+
+The `remediate` command (full reference in [docs/remediate.md](docs/remediate.md)) consumes a CBOM and turns it into an actionable playbook: it reuses the `risk` scorer above for worst-first ordering, then joins each vulnerable asset against its recorded key custody to split the inventory into **controllable** assets (you hold the private key — `remediate` recommends a concrete PQC target and prints a copy-pasteable reissue command) versus **vendor-dependent** trust anchors (a third-party root you don't control — no direct action, you're waiting on the vendor). This is advisory slice A of the remediate loop: it never reissues anything on your behalf and never mutates its input CBOM.
+
+```bash
+certifactory scan ./certs | certifactory remediate
+```
+
+For every controllable asset, the recommended target algorithm follows a fixed precedence (first match wins):
+
+| Precedence | Condition | Target |
+|---|---|---|
+| 1 | Role is `root-ca` or `intermediate-ca` | `ml-dsa-65` |
+| 2 | Non-CA, validity span ≥ **10 years**, and usage is `signature` | `slh-dsa-256s` |
+| 3 | Everything else (leaf / TLS endpoint, or shorter-lived / key-establishment) | `hybrid` |
+
+Full command reference (flags, exit codes, examples): [docs/remediate.md](docs/remediate.md).

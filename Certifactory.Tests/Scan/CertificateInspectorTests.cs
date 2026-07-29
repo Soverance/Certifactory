@@ -27,7 +27,7 @@ public class CertificateInspectorTests
     public void Inspects_rsa_root_ca_fields()
     {
         var bc = Mint(KnownAlgorithms.Rsa4096, "inspect-rsa");
-        var d = CertificateInspector.Inspect(bc, "test.pem");
+        var d = CertificateInspector.Inspect(bc, "test.pem", hasPrivateKey: false);
 
         d.SubjectName.Should().Contain("inspect-rsa");
         d.IssuerName.Should().Contain("inspect-rsa"); // self-signed
@@ -48,7 +48,7 @@ public class CertificateInspectorTests
     public void Inspects_ml_dsa_cert_with_null_key_size()
     {
         var bc = Mint(KnownAlgorithms.MlDsa65, "inspect-mldsa");
-        var d = CertificateInspector.Inspect(bc, "src");
+        var d = CertificateInspector.Inspect(bc, "src", hasPrivateKey: false);
 
         d.SignatureAlgorithmOid.Should().Be("2.16.840.1.101.3.4.3.18");
         d.SubjectKeySizeBits.Should().BeNull(); // not an RSA modulus
@@ -61,7 +61,7 @@ public class CertificateInspectorTests
     public void Detects_hybrid_cert_and_reads_alt_algorithm_oids()
     {
         var bc = Mint(KnownAlgorithms.Hybrid, "inspect-hybrid");
-        var d = CertificateInspector.Inspect(bc, "src");
+        var d = CertificateInspector.Inspect(bc, "src", hasPrivateKey: false);
 
         d.IsHybrid.Should().BeTrue();
         d.SignatureAlgorithmOid.Should().Be("1.2.840.113549.1.1.11");      // classical primary
@@ -85,7 +85,7 @@ public class CertificateInspectorTests
     public void Inspect_flags_root_ca_and_reads_cert_sign_key_usage()
     {
         var bc = BuildBc(CertificatePurpose.RootCa, "root");
-        var d = CertificateInspector.Inspect(bc, "root.pfx");
+        var d = CertificateInspector.Inspect(bc, "root.pfx", hasPrivateKey: false);
 
         d.IsCertificateAuthority.Should().BeTrue();
         d.KeyUsages.Should().NotBeNull();
@@ -98,7 +98,7 @@ public class CertificateInspectorTests
     public void Inspect_flags_server_leaf_and_reads_encipherment_key_usage()
     {
         var bc = BuildBc(CertificatePurpose.Server, "leaf.example.com");
-        var d = CertificateInspector.Inspect(bc, "leaf.pfx");
+        var d = CertificateInspector.Inspect(bc, "leaf.pfx", hasPrivateKey: false);
 
         d.IsCertificateAuthority.Should().BeFalse();
         d.KeyUsages.Should().NotBeNull();

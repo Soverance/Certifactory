@@ -65,15 +65,27 @@ public static class CbomBuilder
             Component? altKeyAlg = c.IsHybrid && c.AltKeyAlgorithmOid is not null
                 ? AlgorithmComponent(c.AltKeyAlgorithmOid) : null;
 
+            var certProperties = new List<Property>
+            {
+                new() { Name = "certifactory:certificate:role", Value = RoleFor(c) }
+            };
+            // Custody is a tri-state: emit the property only when local key material
+            // was actually inspected (owned-key / public-only). A null value means
+            // custody is undetermined (e.g. a cert observed over the wire), so we omit
+            // the property entirely rather than mislabel it public-only.
+            if (c.HasPrivateKey is not null)
+                certProperties.Add(new Property
+                {
+                    Name = "certifactory:certificate:custody",
+                    Value = c.HasPrivateKey.Value ? "owned-key" : "public-only"
+                });
+
             components.Add(new Component
             {
                 Type = "cryptographic-asset",
                 BomRef = certRef,
                 Name = c.SubjectName,
-                Properties = new List<Property>
-                {
-                    new() { Name = "certifactory:certificate:role", Value = RoleFor(c) }
-                },
+                Properties = certProperties,
                 CryptoProperties = new CryptoProperties
                 {
                     AssetType = "certificate",

@@ -11,7 +11,7 @@ using Org.BouncyCastle.X509;
 using BcX509 = Org.BouncyCastle.X509.X509Certificate;
 
 /// <summary>One certificate loaded from a source, with a human-readable provenance string.</summary>
-public record LoadedCertificate(BcX509 Cert, string SourceDescription);
+public record LoadedCertificate(BcX509 Cert, string SourceDescription, bool HasPrivateKey = false);
 
 /// <summary>Result of loading one path/directory: the certs found plus non-fatal warnings.</summary>
 public sealed class CertificateSourceResult
@@ -95,7 +95,8 @@ public static class CertificateSource
         {
             var entry = store.GetCertificate(alias);
             if (entry?.Certificate is not null)
-                result.Certificates.Add(new LoadedCertificate(entry.Certificate, $"{path}#{alias}"));
+                result.Certificates.Add(new LoadedCertificate(
+                    entry.Certificate, $"{path}#{alias}", store.IsKeyEntry(alias)));
         }
     }
 
@@ -112,13 +113,14 @@ public static class CertificateSource
         var text = File.ReadAllText(path);
         if (text.Contains("-----BEGIN CERTIFICATE-----"))
         {
+            bool hasKey = text.Contains("PRIVATE KEY-----");
             using var reader = new StringReader(text);
             var pem = new PemReader(reader);
             object? obj;
             while ((obj = pem.ReadObject()) is not null)
             {
                 if (obj is BcX509 cert)
-                    result.Certificates.Add(new LoadedCertificate(cert, path));
+                    result.Certificates.Add(new LoadedCertificate(cert, path, hasKey));
             }
         }
         else
