@@ -68,4 +68,41 @@ public class CertificateInspectorTests
         d.AltSignatureAlgorithmOid.Should().Be("2.16.840.1.101.3.4.3.18"); // ML-DSA-65 alt
         d.AltKeyAlgorithmOid.Should().Be("2.16.840.1.101.3.4.3.18");
     }
+
+    private static Org.BouncyCastle.X509.X509Certificate BuildBc(CertificatePurpose purpose, string cn)
+    {
+        var signer = SignerFactory.Create(KnownAlgorithms.Rsa4096);
+        signer.GenerateKeyPair();
+        var cert = CertificateBuilder.BuildCertificate(new CertificateSpec(
+            purpose, cn, "Pass", signer,
+            ServerIp: "10.0.0.1",
+            EmailAddress: purpose == CertificatePurpose.Smime ? "u@example.com" : null,
+            Issuer: null));
+        return DotNetUtilities.FromX509Certificate(cert);
+    }
+
+    [Fact]
+    public void Inspect_flags_root_ca_and_reads_cert_sign_key_usage()
+    {
+        var bc = BuildBc(CertificatePurpose.RootCa, "root");
+        var d = CertificateInspector.Inspect(bc, "root.pfx");
+
+        d.IsCertificateAuthority.Should().BeTrue();
+        d.KeyUsages.Should().NotBeNull();
+        d.KeyUsages![5].Should().BeTrue(); // keyCertSign
+        d.KeyUsages![6].Should().BeTrue(); // cRLSign
+        d.KeyUsages![2].Should().BeFalse(); // keyEncipherment not set on the CA
+    }
+
+    [Fact]
+    public void Inspect_flags_server_leaf_and_reads_encipherment_key_usage()
+    {
+        var bc = BuildBc(CertificatePurpose.Server, "leaf.example.com");
+        var d = CertificateInspector.Inspect(bc, "leaf.pfx");
+
+        d.IsCertificateAuthority.Should().BeFalse();
+        d.KeyUsages.Should().NotBeNull();
+        d.KeyUsages![0].Should().BeTrue(); // digitalSignature
+        d.KeyUsages![2].Should().BeTrue(); // keyEncipherment
+    }
 }

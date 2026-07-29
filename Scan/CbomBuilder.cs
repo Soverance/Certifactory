@@ -40,7 +40,8 @@ public static class CbomBuilder
                     {
                         Primitive = cls.Primitive,
                         ParameterSetIdentifier = cls.ParameterSetIdentifier,
-                        NistQuantumSecurityLevel = cls.NistQuantumSecurityLevel
+                        NistQuantumSecurityLevel = cls.NistQuantumSecurityLevel,
+                        CryptoFunctions = CryptoFunctionsFor(cls.Primitive)
                     }
                 }
             };
@@ -69,6 +70,10 @@ public static class CbomBuilder
                 Type = "cryptographic-asset",
                 BomRef = certRef,
                 Name = c.SubjectName,
+                Properties = new List<Property>
+                {
+                    new() { Name = "certifactory:certificate:role", Value = RoleFor(c) }
+                },
                 CryptoProperties = new CryptoProperties
                 {
                     AssetType = "certificate",
@@ -90,6 +95,10 @@ public static class CbomBuilder
                 Type = "cryptographic-asset",
                 BomRef = keyRef,
                 Name = keyAlg.Name + " public key",
+                Properties = new List<Property>
+                {
+                    new() { Name = "certifactory:key:usage", Value = KeyUsageStringFor(c.KeyUsages) }
+                },
                 CryptoProperties = new CryptoProperties
                 {
                     AssetType = "related-crypto-material",
@@ -132,4 +141,33 @@ public static class CbomBuilder
 
     private static string Iso(DateTime dt) =>
         dt.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ");
+
+    // Intrinsic capability of the primitive — CycloneDX cryptoFunctions enum values.
+    private static List<string>? CryptoFunctionsFor(string primitive) => primitive switch
+    {
+        "signature" => new() { "sign", "verify" },
+        "pke"       => new() { "encrypt", "decrypt", "keygen" },
+        "kem"       => new() { "encapsulate", "decapsulate", "keygen" },
+        _           => null
+    };
+
+    private static string RoleFor(DiscoveredCertificate c) =>
+        c.IsCertificateAuthority
+            ? (c.IssuerName == c.SubjectName ? "root-ca" : "intermediate-ca")
+            : "leaf";
+
+    // Map the X.509 KeyUsage bit array to a coarse usage class for HNDL scoring.
+    private static string KeyUsageStringFor(bool[]? ku)
+    {
+        if (ku is null || ku.Length < 5) return "unknown";
+        bool sig = ku[0] || ku[1] || ku[5] || ku[6];        // digitalSignature, nonRepudiation, keyCertSign, cRLSign
+        bool ke  = ku[2] || ku[3] || ku[4];                 // keyEncipherment, dataEncipherment, keyAgreement
+        return (sig, ke) switch
+        {
+            (true, true)  => "both",
+            (false, true) => "key-establishment",
+            (true, false) => "signature",
+            _             => "unknown"
+        };
+    }
 }

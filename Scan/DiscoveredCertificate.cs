@@ -21,4 +21,6 @@ public record DiscoveredCertificate(
     bool IsHybrid,
     string? AltSignatureAlgorithmOid,
     string? AltKeyAlgorithmOid,
-    string SourceDescription);
+    string SourceDescription,
+    bool[]? KeyUsages = null,
+    bool IsCertificateAuthority = false);

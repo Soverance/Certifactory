@@ -23,4 +23,7 @@ public static class CbomSerializer
     };
 
     public static string Serialize(CbomDocument doc) => JsonSerializer.Serialize(doc, Options);
+
+    public static CbomDocument? Deserialize(string json) =>
+        JsonSerializer.Deserialize<CbomDocument>(json, Options);
 }
