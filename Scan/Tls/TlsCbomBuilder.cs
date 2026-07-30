@@ -26,7 +26,7 @@ public static class TlsCbomBuilder
         // 1) Base doc from all served certs via the shipped pipeline — this yields
         // all cert:/key:/alg: components + deps + metadata, already deduped.
         var discovered = eps
-            .SelectMany(e => e.Chain.Select(c => CertificateInspector.Inspect(c, $"tls:{e.Host}:{e.Port}")))
+            .SelectMany(e => e.Chain.Select(c => CertificateInspector.Inspect(c, $"tls:{e.Host}:{e.Port}", hasPrivateKey: null)))
             .ToList();
         var doc = CbomBuilder.Build(discovered, hostName, timestamp, toolVersion);
 
@@ -39,7 +39,7 @@ public static class TlsCbomBuilder
         foreach (var e in eps)
         {
             var protoRef = $"protocol:tls:{e.Host}:{e.Port}";
-            var leaf = CertificateInspector.Inspect(e.Chain[0], $"tls:{e.Host}:{e.Port}");
+            var leaf = CertificateInspector.Inspect(e.Chain[0], $"tls:{e.Host}:{e.Port}", hasPrivateKey: null);
             var leafRef = "cert:" + leaf.Sha256Thumbprint;
 
             var dependsOn = new List<string>();

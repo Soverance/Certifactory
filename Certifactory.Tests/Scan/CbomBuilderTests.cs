@@ -123,4 +123,57 @@ public class CbomBuilderTests
         doc.Components.Select(c => c.BomRef).Should().OnlyHaveUniqueItems();
         doc.Dependencies.Select(d => d.Ref).Should().OnlyHaveUniqueItems();
     }
+
+    private static DiscoveredCertificate RootCa(string thumb) => new(
+        SubjectName: "CN=root", IssuerName: "CN=root", // self-signed
+        NotBefore: new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+        NotAfter: new DateTime(2046, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+        Sha256Thumbprint: thumb,
+        SignatureAlgorithmOid: "1.2.840.113549.1.1.11",
+        SubjectKeyAlgorithmOid: "1.2.840.113549.1.1.1",
+        SubjectKeySizeBits: 4096,
+        IsHybrid: false, AltSignatureAlgorithmOid: null, AltKeyAlgorithmOid: null,
+        SourceDescription: "root.pfx",
+        // digitalSignature=0, ..., keyCertSign=5, cRLSign=6
+        KeyUsages: new[] { false, false, false, false, false, true, true, false, false },
+        IsCertificateAuthority: true);
+
+    private static DiscoveredCertificate ServerLeaf(string thumb) => Rsa(thumb) with
+    {
+        // digitalSignature=0, keyEncipherment=2, dataEncipherment=3
+        KeyUsages = new[] { true, false, true, true, false, false, false, false, false },
+        IsCertificateAuthority = false
+    };
+
+    [Fact]
+    public void Emits_root_ca_role_and_signature_usage()
+    {
+        var doc = CbomBuilder.Build(new[] { RootCa("rr") }, "H", "2026-07-27T00:00:00Z", "1.0.0");
+
+        var cert = doc.Components.Single(c => c.BomRef == "cert:rr");
+        cert.Properties!.Single(p => p.Name == "certifactory:certificate:role").Value.Should().Be("root-ca");
+
+        var key = doc.Components.Single(c => c.BomRef == "key:rr");
+        key.Properties!.Single(p => p.Name == "certifactory:key:usage").Value.Should().Be("signature");
+    }
+
+    [Fact]
+    public void Emits_leaf_role_and_both_usage()
+    {
+        var doc = CbomBuilder.Build(new[] { ServerLeaf("ll") }, "H", "2026-07-27T00:00:00Z", "1.0.0");
+
+        var cert = doc.Components.Single(c => c.BomRef == "cert:ll");
+        cert.Properties!.Single(p => p.Name == "certifactory:certificate:role").Value.Should().Be("leaf");
+
+        var key = doc.Components.Single(c => c.BomRef == "key:ll");
+        key.Properties!.Single(p => p.Name == "certifactory:key:usage").Value.Should().Be("both");
+    }
+
+    [Fact]
+    public void Emits_crypto_functions_on_algorithm_components()
+    {
+        var doc = CbomBuilder.Build(new[] { Rsa("aa") }, "H", "2026-07-27T00:00:00Z", "1.0.0");
+        var sigAlg = doc.Components.Single(c => c.BomRef == "alg:1.2.840.113549.1.1.11");
+        sigAlg.CryptoProperties!.AlgorithmProperties!.CryptoFunctions.Should().Contain("sign");
+    }
 }

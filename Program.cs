@@ -23,6 +23,8 @@ class Program
         root.Add(MiscCommands.BuildVersionCommand());
         root.Add(ScanCommand.Build());
         root.Add(TlsScanCommand.Build());
+        root.Add(RiskCommand.Build());
+        root.Add(RemediateCommand.Build());
 
         try
         {

@@ -55,7 +55,7 @@ public static class ScanRunner
         warnings.AddRange(loaded.Warnings);
 
         var discovered = loaded.Certificates
-            .Select(l => CertificateInspector.Inspect(l.Cert, l.SourceDescription))
+            .Select(l => CertificateInspector.Inspect(l.Cert, l.SourceDescription, l.HasPrivateKey))
             .ToList();
 
         var deduped = new List<DiscoveredCertificate>();

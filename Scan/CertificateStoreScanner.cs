@@ -66,7 +66,8 @@ public static class CertificateStoreScanner
                 try
                 {
                     var bc = DotNetUtilities.FromX509Certificate(cert);
-                    result.Certificates.Add(new LoadedCertificate(bc, $"store:{location}/{label}"));
+                    result.Certificates.Add(new LoadedCertificate(
+                        bc, $"store:{location}/{label}", cert.HasPrivateKey));
                 }
                 catch (Exception ex)
                 {

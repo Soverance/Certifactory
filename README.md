@@ -174,6 +174,32 @@ Probes TLS endpoints over the network to inventory negotiated protocol parameter
 </details>
 
 <details>
+<summary><strong>risk</strong> — Score a CBOM for Post-Quantum Risk</summary>
+
+```
+certifactory risk [--input <cbom.json>] [--format table|json] [--report <path.md>] [--top <N>] [--quantum-year <YYYY>] [--data-shelf-life <years>] [--migration-time <years>] [--fail-over <score>]
+```
+
+Consumes a CycloneDX 1.6 CBOM (from `scan`, `tls-scan`, or any other CycloneDX-1.6-conformant source) and produces a prioritized post-quantum risk assessment: a 0–100 score per certificate/TLS endpoint that rolls up into an A–F inventory grade. Reads stdin by default, so `certifactory scan ./certs | certifactory risk` works out of the box.
+
+| Parameter | Description |
+|---|---|
+| `--input` | (Optional) Read the CBOM from this file instead of stdin. |
+| `--format` | (Optional) Console output: `table` (default) or `json`. |
+| `--report` | (Optional) Also write a shareable Markdown risk report to this path. |
+| `--top` | (Optional) Limit the prioritized asset list to the N highest-risk assets. Default: 20. |
+| `--quantum-year`, `--data-shelf-life`, `--migration-time` | (Optional) Mosca time-horizon override for the validity factor. See [Post-quantum risk scoring](#post-quantum-risk-scoring). |
+| `--fail-over` | (Optional) CI gate: exit code 2 if the inventory score exceeds this value. |
+
+Exit codes: `0` success, `1` CBOM could not be parsed, `2` `--fail-over` threshold exceeded.
+
+See [Post-quantum risk scoring](#post-quantum-risk-scoring) below for the complete scoring ruleset.
+
+[Full documentation](docs/risk.md)
+
+</details>
+
+<details>
 <summary><strong>ssh</strong> — Generate SSH Keypair</summary>
 
 ```
@@ -212,3 +238,102 @@ Generates a 4096-bit RSA GPG keypair for GitHub commit signing. If `gpg` is foun
 [Full documentation](docs/gpg.md)
 
 </details>
+
+# Post-quantum risk scoring
+
+The `risk` command (see above; full reference in [docs/risk.md](docs/risk.md)) turns a CBOM into a prioritized post-quantum risk assessment using a documented, zero-config heuristic. This section is the **complete ruleset** — every number the scorer uses — so a score is defensible and citable.
+
+## Scoring model
+
+**Per-asset score = `100 × readinessFactor × exposure`**, clamped to `0–100`. An "asset" is a certificate or a TLS endpoint (protocol) component in the CBOM.
+
+### `readinessFactor` — the gate
+
+Post-quantum readiness gates the score: no vulnerability, no risk.
+
+| Readiness | Factor |
+|---|---|
+| Vulnerable (RSA / ECDSA / DH) | 1.00 |
+| Unknown / unclassified | 0.85 |
+| Hybrid (transitional) | 0.35 |
+| Quantum-safe (ML-DSA / SLH-DSA) | 0.00 |
+
+A quantum-safe asset always scores **0** — the gate zeroes out anything already migrated, no matter how exposed it would otherwise be. For a **certificate** (which references both a signature algorithm and a subject-key algorithm), readiness is the **worst** (most vulnerable) of the two — pessimistic, matching the existing `scan`/`tls-scan` classification.
+
+### `exposure` — the amplifier
+
+`exposure` is the weighted average of four factors, each in `[0, 1]`, answering "how urgent is it that this particular asset is vulnerable":
+
+`exposure = 0.40 × usage + 0.25 × role + 0.20 × validity + 0.15 × keyStrength`
+
+| Factor | Weight | Scoring |
+|---|---|---|
+| **HNDL usage** | 0.40 | key-establishment / both / unknown = **1.0** · signature-only = **0.3** |
+| **Asset role** (blast radius) | 0.25 | root CA = **1.0** · intermediate CA = **0.7** · TLS endpoint = **0.5** · leaf / unknown = **0.3** |
+| **Validity window** | 0.20 | >10 yr remaining = **1.0** · 5–10 yr = **0.7** · 1–5 yr = **0.4** · <1 yr = **0.15** |
+| **Key strength** | 0.15 | <2048-bit = **1.0** · 2048–<4096-bit = **0.5** · ≥4096-bit = **0.2** · unknown = **0.5** |
+
+**Why HNDL usage is weighted highest:** encryption / key-exchange keys are the ones an adversary can *harvest today and decrypt after Q-day* (harvest-now-decrypt-later) — genuinely urgent regardless of when Q-day actually arrives. Signatures only become forgeable *after* Q-day, so a signature-only certificate that expires before then is far less pressing. For a certificate, usage is read from the **subject key's** KeyUsage extension (the key that protects data). A TLS endpoint has no certificate expiry of its own — it is always treated as key-establishment usage, its role is always `tls-endpoint`, and its readiness comes from the negotiated key-exchange group's classification rather than a certificate's signature/key algorithms.
+
+### Grade bands
+
+Applied to both per-asset scores and the inventory roll-up:
+
+| Score | Grade | Label |
+|---|---|---|
+| ≤ 20 | A | Low |
+| ≤ 40 | B | Guarded |
+| ≤ 60 | C | Elevated |
+| ≤ 80 | D | High |
+| > 80 | F | Critical |
+
+### Inventory roll-up
+
+Inventory score = the **mean** of per-asset scores; the grade is derived from the bands above. Reports always surface per-band counts and the full worst-first ranking, so a small number of Critical assets is never hidden by averaging.
+
+### Mosca time-horizon override
+
+By default, the validity factor uses each asset's raw remaining certificate lifetime (a TLS endpoint uses the maximum, `1.0`, absent an override — a live session has no expiry date of its own). Supplying **both** `--quantum-year <YYYY>` and `--data-shelf-life <years>` (plus optional `--migration-time <years>`, default **1**) *reinterprets* the validity factor using Mosca's inequality instead:
+
+- `yearsToQ` = `quantum-year` − the current (fractional) year.
+- `horizon` = `data-shelf-life` + `migration-time`.
+- If Q-day has already passed, or `horizon ≥ yearsToQ` (the protected data would still need to be secret when the CRQC arrives), the validity factor **saturates to 1.0**.
+- Otherwise the factor scales proportionally, `horizon / yearsToQ`, clamped to **[0.15, 1.0]**.
+
+All other factors (usage, role, key strength) are unaffected by the override.
+
+### Graceful degradation on un-enriched CBOMs
+
+`risk` degrades conservatively when scoring a CBOM that lacks Certifactory's enrichment properties (`certifactory:certificate:role`, `certifactory:key:usage`) — an older Certifactory CBOM, or a third-party one:
+
+- Missing usage → assumed worst case, **usage factor 1.0** (as if key-establishment).
+- Missing role → treated as **leaf** (role factor 0.3).
+- Missing/unparseable validity date → **mid-exposure, 0.4** (only relevant absent a Mosca override).
+
+Whenever no component in the CBOM carries the `certifactory:certificate:role` property, both the console output and the Markdown report print a one-line note — *"input CBOM lacked certifactory enrichment (cert role / key usage); scores use conservative worst-case defaults"* — so a degraded score is never mistaken for a fully-informed one.
+
+### Worked examples
+
+- **Vulnerable root-CA key-establishment cert** (RSA-4096, 15 yr remaining): `exposure = 0.40·1.0 + 0.25·1.0 + 0.20·1.0 + 0.15·0.2 = 0.88` → `100 × 1.00 × 0.88 = 88` → **F, Critical**.
+- **Vulnerable leaf signature-only cert** (RSA-4096, expires in 6 mo): `exposure = 0.40·0.3 + 0.25·0.3 + 0.20·0.15 + 0.15·0.2 = 0.255` → `100 × 1.00 × 0.255 = 25.5` → **B, Guarded**.
+- **Any quantum-safe asset**: **0**, always (the gate).
+
+Full command reference (flags, exit codes, examples): [docs/risk.md](docs/risk.md).
+
+# Post-quantum remediation playbook
+
+The `remediate` command (full reference in [docs/remediate.md](docs/remediate.md)) consumes a CBOM and turns it into an actionable playbook: it reuses the `risk` scorer above for worst-first ordering, then joins each vulnerable asset against its recorded key custody to split the inventory into **controllable** assets (you hold the private key — `remediate` recommends a concrete PQC target and prints a copy-pasteable reissue command) versus **vendor-dependent** trust anchors (a third-party root you don't control — no direct action, you're waiting on the vendor). This is advisory slice A of the remediate loop: it never reissues anything on your behalf and never mutates its input CBOM.
+
+```bash
+certifactory scan ./certs | certifactory remediate
+```
+
+For every controllable asset, the recommended target algorithm follows a fixed precedence (first match wins):
+
+| Precedence | Condition | Target |
+|---|---|---|
+| 1 | Role is `root-ca` or `intermediate-ca` | `ml-dsa-65` |
+| 2 | Non-CA, validity span ≥ **10 years**, and usage is `signature` | `slh-dsa-256s` |
+| 3 | Everything else (leaf / TLS endpoint, or shorter-lived / key-establishment) | `hybrid` |
+
+Full command reference (flags, exit codes, examples): [docs/remediate.md](docs/remediate.md).

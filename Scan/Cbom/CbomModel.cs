@@ -43,7 +43,14 @@ public sealed class Component
     [JsonPropertyName("type")]             public string Type { get; set; } = "";
     [JsonPropertyName("bom-ref")]          public string BomRef { get; set; } = "";
     [JsonPropertyName("name")]             public string Name { get; set; } = "";
+    [JsonPropertyName("properties")]       public List<Property>? Properties { get; set; }
     [JsonPropertyName("cryptoProperties")] public CryptoProperties? CryptoProperties { get; set; }
+}
+
+public sealed class Property
+{
+    [JsonPropertyName("name")]  public string Name { get; set; } = "";
+    [JsonPropertyName("value")] public string Value { get; set; } = "";
 }
 
 public sealed class CryptoProperties

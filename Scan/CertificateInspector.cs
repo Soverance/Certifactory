@@ -21,7 +21,7 @@ using BcX509 = Org.BouncyCastle.X509.X509Certificate;
 /// </summary>
 public static class CertificateInspector
 {
-    public static DiscoveredCertificate Inspect(BcX509 cert, string sourceDescription)
+    public static DiscoveredCertificate Inspect(BcX509 cert, string sourceDescription, bool? hasPrivateKey)
     {
         var spki = cert.CertificateStructure.SubjectPublicKeyInfo;
         var subjectKeyAlgOid = spki.Algorithm.Algorithm.Id;
@@ -59,6 +59,15 @@ public static class CertificateInspector
             }
         }
 
+        // KeyUsage bit array (BouncyCastle order: 0=digitalSignature, 1=nonRepudiation,
+        // 2=keyEncipherment, 3=dataEncipherment, 4=keyAgreement, 5=keyCertSign,
+        // 6=cRLSign, 7=encipherOnly, 8=decipherOnly), or null when the extension is absent.
+        bool[]? keyUsages = cert.GetKeyUsage();
+
+        // GetBasicConstraints() returns -1 when the cert is not a CA; any other value
+        // (path length, or int.MaxValue for a CA with no path constraint) means CA.
+        bool isCa = cert.GetBasicConstraints() != -1;
+
         return new DiscoveredCertificate(
             SubjectName: cert.SubjectDN.ToString(),
             IssuerName: cert.IssuerDN.ToString(),
@@ -71,6 +80,9 @@ public static class CertificateInspector
             IsHybrid: isHybrid,
             AltSignatureAlgorithmOid: altSigAlgOid,
             AltKeyAlgorithmOid: altKeyAlgOid,
-            SourceDescription: sourceDescription);
+            SourceDescription: sourceDescription,
+            KeyUsages: keyUsages,
+            IsCertificateAuthority: isCa,
+            HasPrivateKey: hasPrivateKey);
     }
 }

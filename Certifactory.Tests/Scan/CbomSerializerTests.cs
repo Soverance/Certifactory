@@ -3,6 +3,8 @@
 // Enterprise Applications Architect - Soverance Studios
 // scott.mccutchen@soverance.com
 
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using FluentAssertions;
 using Soverance.Certifactory.Scan;
@@ -64,5 +66,36 @@ public class CbomSerializerTests
         alg.TryGetProperty("parameterSetIdentifier", out _).Should().BeFalse();
 
         root.GetProperty("dependencies")[0].GetProperty("dependsOn")[0].GetString().Should().Be("alg:rsa");
+    }
+
+    [Fact]
+    public void Deserialize_round_trips_components_and_properties()
+    {
+        var doc = new CbomDocument
+        {
+            Components =
+            {
+                new Component
+                {
+                    Type = "cryptographic-asset",
+                    BomRef = "cert:aa",
+                    Name = "CN=x",
+                    Properties = new List<Property>
+                    {
+                        new() { Name = "certifactory:certificate:role", Value = "root-ca" }
+                    },
+                    CryptoProperties = new CryptoProperties { AssetType = "certificate" }
+                }
+            }
+        };
+
+        var json = CbomSerializer.Serialize(doc);
+        var back = CbomSerializer.Deserialize(json);
+
+        var comp = back!.Components.Single();
+        comp.BomRef.Should().Be("cert:aa");
+        comp.Properties!.Single().Name.Should().Be("certifactory:certificate:role");
+        comp.Properties!.Single().Value.Should().Be("root-ca");
+        comp.CryptoProperties!.AssetType.Should().Be("certificate");
     }
 }
