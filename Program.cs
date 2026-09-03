@@ -16,6 +16,7 @@ class Program
         root.Add(CaCommand.Build());
         root.Add(ServerCommand.Build());
         root.Add(SmimeCommand.Build());
+        root.Add(CodeSignCommand.Build());
         root.Add(MiscCommands.BuildTestPfxCommand());
         root.Add(MiscCommands.BuildExportCommand());
         root.Add(MiscCommands.BuildSshCommand());

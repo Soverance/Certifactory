@@ -473,4 +473,161 @@ public class CertificateBuilderTests
             File.Delete(tempPath);
         }
     }
+
+    [Fact]
+    public void CodeSigning_cert_has_codeSigning_eku_no_ms_oids_and_default_org_subject()
+    {
+        var caSigner = SignerFactory.Create(KnownAlgorithms.Rsa4096);
+        caSigner.GenerateKeyPair();
+        var caCert = CertificateBuilder.BuildCertificate(new CertificateSpec(
+            CertificatePurpose.RootCa, "codesign-test-ca", "Pass", caSigner,
+            ServerIp: null, EmailAddress: null, Issuer: null));
+
+        var leafSigner = SignerFactory.Create(KnownAlgorithms.Rsa4096);
+        leafSigner.GenerateKeyPair();
+        var leaf = CertificateBuilder.BuildCertificate(new CertificateSpec(
+            CertificatePurpose.CodeSigning, "Soverance Publisher", "Pass", leafSigner,
+            ServerIp: null, EmailAddress: null,
+            Issuer: new IssuerInfo(caCert, caSigner)));
+
+        // Chains + is a leaf
+        leaf.Issuer.Should().Be("CN=codesign-test-ca");
+        leaf.Extensions.OfType<X509BasicConstraintsExtension>().Single()
+            .CertificateAuthority.Should().BeFalse();
+
+        // KeyUsage = DigitalSignature
+        var ku = leaf.Extensions.OfType<X509KeyUsageExtension>().Single().KeyUsages;
+        ku.Should().HaveFlag(X509KeyUsageFlags.DigitalSignature);
+
+        // EKU has standard codeSigning, and NONE of the MS OIDs
+        var ekus = leaf.Extensions.OfType<X509EnhancedKeyUsageExtension>()
+            .Single().EnhancedKeyUsages.OfType<Oid>().Select(o => o.Value).ToList();
+        ekus.Should().Contain("1.3.6.1.5.5.7.3.3");
+        ekus.Should().NotContain("1.3.6.1.4.1.311.2.1.21");
+        ekus.Should().NotContain("1.3.6.1.4.1.311.10.3.13");
+
+        // AKI links to CA's SKI (chain is real)
+        var caSki = caCert.Extensions.OfType<X509SubjectKeyIdentifierExtension>().Single()
+            .SubjectKeyIdentifierBytes;
+        var leafAki = leaf.Extensions.OfType<X509AuthorityKeyIdentifierExtension>().Single();
+        leafAki.KeyIdentifier.Should().NotBeNull();
+        leafAki.KeyIdentifier!.Value.ToArray().Should().Equal(caSki.ToArray());
+
+        // Default subject (no --org) carries the Soverance org block
+        leaf.Subject.Should().Contain("CN=Soverance Publisher");
+        leaf.Subject.Should().Contain("O=Soverance Studios");
+    }
+
+    [Fact]
+    public void CodeSigning_cert_with_org_uses_org_in_subject()
+    {
+        var caSigner = SignerFactory.Create(KnownAlgorithms.Rsa4096);
+        caSigner.GenerateKeyPair();
+        var caCert = CertificateBuilder.BuildCertificate(new CertificateSpec(
+            CertificatePurpose.RootCa, "codesign-org-ca", "Pass", caSigner,
+            ServerIp: null, EmailAddress: null, Issuer: null));
+
+        var leafSigner = SignerFactory.Create(KnownAlgorithms.Rsa4096);
+        leafSigner.GenerateKeyPair();
+        var leaf = CertificateBuilder.BuildCertificate(new CertificateSpec(
+            CertificatePurpose.CodeSigning, "Acme Signer", "Pass", leafSigner,
+            ServerIp: null, EmailAddress: null,
+            Issuer: new IssuerInfo(caCert, caSigner),
+            Organization: "Acme Inc"));
+
+        leaf.Subject.Should().Contain("CN=Acme Signer");
+        leaf.Subject.Should().Contain("O=Acme Inc");
+        leaf.Subject.Should().NotContain("Soverance Studios");
+    }
+
+    [Fact]
+    public void CodeSigning_authenticode_adds_ms_oids()
+    {
+        var caSigner = SignerFactory.Create(KnownAlgorithms.Rsa4096);
+        caSigner.GenerateKeyPair();
+        var caCert = CertificateBuilder.BuildCertificate(new CertificateSpec(
+            CertificatePurpose.RootCa, "codesign-auth-ca", "Pass", caSigner,
+            ServerIp: null, EmailAddress: null, Issuer: null));
+
+        var leafSigner = SignerFactory.Create(KnownAlgorithms.Rsa4096);
+        leafSigner.GenerateKeyPair();
+        var leaf = CertificateBuilder.BuildCertificate(new CertificateSpec(
+            CertificatePurpose.CodeSigning, "Authenticode Signer", "Pass", leafSigner,
+            ServerIp: null, EmailAddress: null,
+            Issuer: new IssuerInfo(caCert, caSigner),
+            Organization: null, Authenticode: true));
+
+        var ekus = leaf.Extensions.OfType<X509EnhancedKeyUsageExtension>()
+            .Single().EnhancedKeyUsages.OfType<Oid>().Select(o => o.Value).ToList();
+        ekus.Should().Contain("1.3.6.1.5.5.7.3.3");        // standard, still present
+        ekus.Should().Contain("1.3.6.1.4.1.311.2.1.21");   // MS Individual Code Signing
+        ekus.Should().NotContain("1.3.6.1.4.1.311.10.3.13"); // MS Lifetime Signing — deliberately excluded,
+                                                               // contradicts the Authenticode timestamping model
+    }
+
+    [Fact]
+    public void CodeSigning_ML_DSA_cert_signed_by_ML_DSA_CA_chains_and_verifies()
+    {
+        var caSigner = SignerFactory.Create(KnownAlgorithms.MlDsa65);
+        caSigner.GenerateKeyPair();
+        var caCert = CertificateBuilder.BuildCertificate(new CertificateSpec(
+            CertificatePurpose.RootCa, "codesign-mldsa-ca", "Pass", caSigner,
+            ServerIp: null, EmailAddress: null, Issuer: null));
+
+        var leafSigner = SignerFactory.Create(KnownAlgorithms.MlDsa65);
+        leafSigner.GenerateKeyPair();
+        var leaf = CertificateBuilder.BuildCertificate(new CertificateSpec(
+            CertificatePurpose.CodeSigning, "PQC Signer", "Pass", leafSigner,
+            ServerIp: null, EmailAddress: null,
+            Issuer: new IssuerInfo(caCert, caSigner),
+            Organization: "Soverance Studios", Authenticode: true));
+
+        leaf.Issuer.Should().Be("CN=codesign-mldsa-ca");
+        leaf.Extensions.OfType<X509BasicConstraintsExtension>().Single()
+            .CertificateAuthority.Should().BeFalse();
+        leaf.Extensions.OfType<X509EnhancedKeyUsageExtension>().Single()
+            .EnhancedKeyUsages.OfType<Oid>().Select(o => o.Value)
+            .Should().Contain("1.3.6.1.5.5.7.3.3");
+
+        // Leaf's ML-DSA signature genuinely validates against the CA's public key
+        var bcLeaf = Org.BouncyCastle.Security.DotNetUtilities.FromX509Certificate(leaf);
+        var bcCa = Org.BouncyCastle.Security.DotNetUtilities.FromX509Certificate(caCert);
+        bcLeaf.Verify(bcCa.GetPublicKey()); // throws on bad sig
+    }
+
+    [Fact]
+    public void CodeSigning_org_with_comma_is_single_rdn()
+    {
+        var caSigner = SignerFactory.Create(KnownAlgorithms.Rsa4096);
+        caSigner.GenerateKeyPair();
+        var caCert = CertificateBuilder.BuildCertificate(new CertificateSpec(
+            CertificatePurpose.RootCa, "codesign-comma-ca", "Pass", caSigner,
+            ServerIp: null, EmailAddress: null, Issuer: null));
+
+        var leafSigner = SignerFactory.Create(KnownAlgorithms.Rsa4096);
+        leafSigner.GenerateKeyPair();
+        var leaf = CertificateBuilder.BuildCertificate(new CertificateSpec(
+            CertificatePurpose.CodeSigning, "Comma Signer", "Pass", leafSigner,
+            ServerIp: null, EmailAddress: null,
+            Issuer: new IssuerInfo(caCert, caSigner),
+            Organization: "Acme, Inc."));
+
+        // Inspect the DN via BouncyCastle rather than the .NET Subject string —
+        // a naive string-interpolated DN would have parsed the comma as an RDN
+        // separator, producing a stray "Inc." RDN instead of a single O value.
+        var bcLeaf = Org.BouncyCastle.Security.DotNetUtilities.FromX509Certificate(leaf);
+        var subjectDn = bcLeaf.SubjectDN;
+
+        var orgValues = subjectDn.GetValueList(Org.BouncyCastle.Asn1.X509.X509Name.O);
+        orgValues.Should().ContainSingle()
+            .Which.Should().Be("Acme, Inc.");
+
+        var cnValues = subjectDn.GetValueList(Org.BouncyCastle.Asn1.X509.X509Name.CN);
+        cnValues.Should().ContainSingle()
+            .Which.Should().Be("Comma Signer");
+
+        // No stray RDN from a mis-parsed comma (e.g. an "Inc." attribute value
+        // with no OID, or an extra O/CN entry).
+        subjectDn.GetOidList().Should().HaveCount(2);
+    }
 }
