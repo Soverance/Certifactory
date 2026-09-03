@@ -14,7 +14,7 @@ using Org.BouncyCastle.Security;
 using Org.BouncyCastle.X509;
 using Org.BouncyCastle.X509.Extension;
 
-public enum CertificatePurpose { RootCa, Server, Smime }
+public enum CertificatePurpose { RootCa, Server, Smime, CodeSigning }
 
 public sealed record CertificateSpec(
     CertificatePurpose Purpose,
@@ -23,7 +23,9 @@ public sealed record CertificateSpec(
     IPqSigner Signer,
     string? ServerIp,
     string? EmailAddress,
-    IssuerInfo? Issuer);
+    IssuerInfo? Issuer,
+    string? Organization = null,
+    bool Authenticode = false);
 
 public sealed record IssuerInfo(
     X509Certificate2 Certificate,
@@ -254,6 +256,32 @@ public static class CertificateBuilder
                         new GeneralName(GeneralName.Rfc822Name, spec.EmailAddress)
                     })));
                 break;
+
+            case CertificatePurpose.CodeSigning:
+                list.Add((X509Extensions.BasicConstraints, true,
+                    new BasicConstraints(cA: false)));
+                list.Add((X509Extensions.KeyUsage, true,
+                    new KeyUsage(KeyUsage.DigitalSignature)));
+                var codeSignEkus = new List<DerObjectIdentifier> { KeyPurposeID.id_kp_codeSigning };
+                if (spec.Authenticode)
+                {
+                    codeSignEkus.Add(new DerObjectIdentifier("1.3.6.1.4.1.311.2.1.21"));  // MS Individual Code Signing
+                    // NOTE: deliberately NOT adding "1.3.6.1.4.1.311.10.3.13" (MS Lifetime
+                    // Signing) — it tells Authenticode to treat the signature as expired
+                    // once the cert expires, which contradicts the timestamping model.
+                }
+                list.Add((X509Extensions.ExtendedKeyUsage, false,
+                    new ExtendedKeyUsage(codeSignEkus.ToArray())));
+                list.Add((X509Extensions.SubjectKeyIdentifier, false,
+                    X509ExtensionUtilities.CreateSubjectKeyIdentifier(subjectSpki)));
+                if (spec.Issuer is not null)
+                {
+                    var issuerSpki = SubjectPublicKeyInfoFactory.CreateSubjectPublicKeyInfo(
+                        DotNetUtilities.FromX509Certificate(spec.Issuer.Certificate).GetPublicKey());
+                    list.Add((X509Extensions.AuthorityKeyIdentifier, false,
+                        X509ExtensionUtilities.CreateAuthorityKeyIdentifier(issuerSpki)));
+                }
+                break;
         }
 
         return list;
@@ -278,6 +306,19 @@ public static class CertificateBuilder
         CertificatePurpose.Server => new X509Name($"CN={spec.CommonName}"),
         CertificatePurpose.Smime  => new X509Name(
             $"CN={spec.CommonName},C=US,ST=Georgia,L=Atlanta,O=Soverance Studios,OU=Information"),
+        CertificatePurpose.CodeSigning => string.IsNullOrEmpty(spec.Organization)
+            ? new X509Name(
+                new List<DerObjectIdentifier>
+                {
+                    X509Name.CN, X509Name.C, X509Name.ST, X509Name.L, X509Name.O, X509Name.OU
+                },
+                new List<string>
+                {
+                    spec.CommonName, "US", "Georgia", "Atlanta", "Soverance Studios", "Information"
+                })
+            : new X509Name(
+                new List<DerObjectIdentifier> { X509Name.CN, X509Name.O },
+                new List<string> { spec.CommonName, spec.Organization }),
         _ => throw new ArgumentOutOfRangeException(nameof(spec))
     };
 
@@ -286,6 +327,7 @@ public static class CertificateBuilder
         CertificatePurpose.RootCa => 7300,  // 20 years
         CertificatePurpose.Server => 396,   // iOS limit
         CertificatePurpose.Smime  => 3650,  // 10 years
+        CertificatePurpose.CodeSigning => 1095, // 3 years
         _ => 365
     };
 
